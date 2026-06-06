@@ -30,7 +30,8 @@ Axis rules:
 Coordinate rules:
 - x and y values must be between -1.0 and 1.0
 - Place the subject company accurately relative to competitors
-- Spread entities across the quadrants — avoid clustering everything in one area"""
+- Spread entities across the quadrants — avoid clustering everything in one area
+- Mark exactly one entity as is_subject=true (the company being analyzed)"""
 
 
 class AxisSchema(BaseModel):
@@ -56,6 +57,7 @@ class PositioningAnalyzerStage(PipelineStage):
     stage_number = 5
     stage_name = "Positioning Analyzer"
     timeout_s = 10
+    max_retries = 1
 
     async def execute(self, ctx: PipelineContext) -> None:
         if not ctx.competitors:
@@ -74,7 +76,8 @@ Category: {ctx.category.label if ctx.category else 'Unknown'}
 Competitors:
 {competitors_text}
 
-Define two strategic axes and plot every competitor + the subject company."""
+Define two strategic axes and plot every competitor + the subject company.
+Mark {ctx.input.company_name} with is_subject=true."""
 
         response = await client.beta.chat.completions.parse(
             model="gpt-4o",
@@ -88,14 +91,26 @@ Define two strategic axes and plot every competitor + the subject company."""
         )
 
         result = response.choices[0].message.parsed
-        if result:
-            pm = PositioningMap(
-                x_axis={"label": result.x_axis.label, "low": result.x_axis.low, "high": result.x_axis.high},
-                y_axis={"label": result.y_axis.label, "low": result.y_axis.low, "high": result.y_axis.high},
-                entities=[
-                    PositioningEntity(name=e.name, x=e.x, y=e.y, is_subject=e.is_subject)
-                    for e in result.entities
-                ],
-            )
-            ctx.positioning_map = validate_positioning_map(pm)
-            logger.info(f"[Stage 5] Axes: {result.x_axis.label} / {result.y_axis.label}")
+        if not result:
+            raise ValueError("LLM returned empty positioning output")
+
+        # Ensure exactly one subject entity
+        subjects = [e for e in result.entities if e.is_subject]
+        if not subjects:
+            # Find the entity closest to the company name
+            company_lower = ctx.input.company_name.lower()
+            for entity in result.entities:
+                if entity.name.lower() == company_lower:
+                    entity.is_subject = True
+                    break
+
+        pm = PositioningMap(
+            x_axis={"label": result.x_axis.label, "low": result.x_axis.low, "high": result.x_axis.high},
+            y_axis={"label": result.y_axis.label, "low": result.y_axis.low, "high": result.y_axis.high},
+            entities=[
+                PositioningEntity(name=e.name, x=e.x, y=e.y, is_subject=e.is_subject)
+                for e in result.entities
+            ],
+        )
+        ctx.positioning_map = validate_positioning_map(pm)
+        logger.info(f"[Stage 5] Axes: {result.x_axis.label} / {result.y_axis.label} — {len(pm.entities)} entities")
