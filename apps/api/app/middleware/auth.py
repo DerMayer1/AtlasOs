@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
@@ -15,6 +15,7 @@ SUPABASE_JWT_SECRET = settings.supabase_service_key
 
 
 async def require_auth(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
 ) -> dict:
     token = credentials.credentials
@@ -27,7 +28,11 @@ async def require_auth(
         )
         if not payload.get("sub"):
             raise JWTError("Missing subject claim")
+
+        # Attach to request.state so rate limiter can key by user_id
+        request.state.user = payload
         return payload
+
     except JWTError as e:
         logger.warning(f"[Auth] JWT validation failed: {e}")
         raise HTTPException(

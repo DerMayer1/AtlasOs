@@ -118,7 +118,11 @@ async def stream_analysis(
     import asyncio
     import json
 
+    from app.config import settings
     from app.queue.client import get_redis
+
+    # SSE connection hard timeout — matches pipeline max duration + 10s buffer
+    SSE_TIMEOUT_S = settings.pipeline_timeout_s + 10
 
     record = await get_analysis(analysis_id, user["sub"])
     if not record:
@@ -130,13 +134,22 @@ async def stream_analysis(
         channel = f"analysis:{analysis_id}:events"
         await pubsub.subscribe(channel)
 
-        # If already complete, send final event immediately
+        # If already complete, send final event immediately — no need to hold connection
         if record["status"] == "complete":
             yield f"event: analysis_complete\ndata: {json.dumps({'analysis_id': analysis_id, 'status': 'complete'})}\n\n"
+            await pubsub.unsubscribe(channel)
             return
+
+        deadline = asyncio.get_event_loop().time() + SSE_TIMEOUT_S
 
         try:
             async for message in pubsub.listen():
+                # Enforce hard deadline — close connection if pipeline takes too long
+                if asyncio.get_event_loop().time() > deadline:
+                    logger.warning(f"[SSE] Stream timed out for analysis {analysis_id}")
+                    yield f"event: analysis_failed\ndata: {json.dumps({'analysis_id': analysis_id, 'error': 'Stream timeout'})}\n\n"
+                    break
+
                 if message["type"] == "message":
                     payload = json.loads(message["data"])
                     yield f"event: {payload['event']}\ndata: {json.dumps(payload['data'])}\n\n"
@@ -145,7 +158,14 @@ async def stream_analysis(
         finally:
             await pubsub.unsubscribe(channel)
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # Disable Nginx buffering
+        },
+    )
 
 
 @router.get("/{analysis_id}/memo")
