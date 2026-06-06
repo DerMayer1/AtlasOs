@@ -40,6 +40,7 @@ class CompetitorSearcherStage(PipelineStage):
     stage_number = 3
     stage_name = "Competitor Searcher"
     timeout_s = 15
+    max_retries = 1  # Tavily can be flaky — one retry with 2s backoff
 
     async def execute(self, ctx: PipelineContext) -> None:
         queries = _build_queries(ctx)

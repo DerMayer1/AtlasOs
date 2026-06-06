@@ -74,6 +74,7 @@ class MemoComposerStage(PipelineStage):
     stage_number = 8
     stage_name = "Memo Composer"
     timeout_s = 15
+    max_retries = 1  # Long output generation can timeout — one retry
 
     async def execute(self, ctx: PipelineContext) -> None:
         context_summary = _build_context_summary(ctx)
