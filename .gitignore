@@ -2,24 +2,26 @@
 node_modules/
 .pnpm-store/
 
-# Environment variables
+# Environment variables — never commit secrets
 .env
 .env.local
 .env.*.local
+*.secret
 
 # Next.js
 apps/web/.next/
 apps/web/out/
 
 # Python
-apps/api/__pycache__/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
 apps/api/.venv/
-apps/api/*.pyc
-apps/api/*.pyo
 apps/api/dist/
 apps/api/.pytest_cache/
 apps/api/.mypy_cache/
 apps/api/.ruff_cache/
+apps/api/*.egg-info/
 
 # Build outputs
 dist/
@@ -31,12 +33,20 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+*.swp
 
 # IDE
 .vscode/settings.json
 .idea/
+*.iml
 
 # Logs
 *.log
 npm-debug.log*
 pnpm-debug.log*
+
+# Certificates / keys
+*.pem
+*.key
+*.crt
+*.p12

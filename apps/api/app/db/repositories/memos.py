@@ -1,6 +1,13 @@
 from __future__ import annotations
 
+import markdown as md
+
 from app.db.client import get_client
+
+
+def _render_html(content_md: str) -> str:
+    """Render Markdown to HTML and cache alongside the raw content."""
+    return md.markdown(content_md, extensions=["tables", "fenced_code"])
 
 
 async def create_memo(analysis_id: str, content_md: str) -> dict:
@@ -8,6 +15,7 @@ async def create_memo(analysis_id: str, content_md: str) -> dict:
     res = await client.table("memos").insert({
         "analysis_id": analysis_id,
         "content_md": content_md,
+        "content_html": _render_html(content_md),
     }).execute()
     return res.data[0]
 
