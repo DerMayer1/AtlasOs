@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { PositioningMap } from '@/components/PositioningMap'
@@ -18,13 +18,19 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
   const { id } = await params
   const supabase = await createClient()
   const { data: { session } } = await supabase.auth.getSession()
-  if (!session) notFound()
+  if (!session) redirect('/auth/login')
 
   const analysis = await getAnalysis(id, session.access_token)
-  if (!analysis || analysis.status !== 'complete' || !analysis.result) notFound()
+  if (!analysis) notFound()
+
+  // Redirect to progress if not yet complete
+  if (analysis.status === 'pending' || analysis.status === 'running') {
+    redirect(`/dashboard/analyses/${id}/progress`)
+  }
+
+  if (analysis.status === 'failed' || !analysis.result) notFound()
 
   const { category, competitors, positioning_map, gaps, recommendations } = analysis.result
-
   const byType = (type: string) => competitors.filter((c) => c.type === type)
 
   return (
@@ -34,31 +40,34 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
         {/* Header */}
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-zinc-500 text-sm mb-1">Market Analysis</p>
-            <h1 className="text-3xl font-semibold">{analysis.input.company_name}</h1>
+            <Link href="/dashboard" className="text-zinc-500 text-sm hover:text-white transition">← Dashboard</Link>
+            <h1 className="text-3xl font-semibold mt-4">{analysis.input.company_name}</h1>
             <p className="text-zinc-400 text-sm mt-2">{category.label}</p>
+            {analysis.duration_ms && (
+              <p className="text-zinc-600 text-xs mt-1">Completed in {(analysis.duration_ms / 1000).toFixed(1)}s</p>
+            )}
           </div>
-          <div className="flex gap-3">
+          <div className="flex gap-3 mt-8">
             <Link
               href={`/dashboard/analyses/${id}/memo`}
-              className="text-sm px-4 py-2 border border-zinc-700 rounded-md text-zinc-300 hover:border-zinc-500 transition"
+              className="text-sm px-4 py-2 bg-white text-black rounded-md font-medium hover:bg-zinc-200 transition"
             >
-              View Memo
+              Market Memo →
             </Link>
           </div>
         </div>
 
         {/* Category */}
         <section>
-          <h2 className="text-xs font-medium uppercase tracking-widest text-zinc-500 mb-3">Market Category</h2>
+          <SectionLabel>Market Category</SectionLabel>
           <p className="text-zinc-200">{category.definition}</p>
         </section>
 
         {/* Competitors */}
         <section>
-          <h2 className="text-xs font-medium uppercase tracking-widest text-zinc-500 mb-6">Competitive Set</h2>
+          <SectionLabel>Competitive Set</SectionLabel>
           <div className="space-y-6">
-            {['direct', 'indirect', 'substitute', 'adjacent', 'future'].map((type) => {
+            {(['direct', 'indirect', 'substitute', 'adjacent', 'future'] as const).map((type) => {
               const group = byType(type)
               if (!group.length) return null
               return (
@@ -84,7 +93,7 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
         {/* Positioning Map */}
         {positioning_map && (
           <section>
-            <h2 className="text-xs font-medium uppercase tracking-widest text-zinc-500 mb-6">Positioning Map</h2>
+            <SectionLabel>Positioning Map</SectionLabel>
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
               <PositioningMap map={positioning_map} />
             </div>
@@ -94,20 +103,14 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
         {/* Gaps */}
         {gaps.length > 0 && (
           <section>
-            <h2 className="text-xs font-medium uppercase tracking-widest text-zinc-500 mb-6">Market Gaps</h2>
+            <SectionLabel>Market Gaps</SectionLabel>
             <div className="space-y-4">
               {gaps.map((gap, i) => (
                 <div key={i} className="bg-zinc-900 border border-zinc-800 rounded-lg p-5">
                   <p className="text-sm text-zinc-100 mb-3">{gap.description}</p>
                   <div className="grid grid-cols-2 gap-4 text-xs">
-                    <div>
-                      <span className="text-zinc-500 block mb-1">Addressability</span>
-                      <span className="text-zinc-300">{gap.addressability}</span>
-                    </div>
-                    <div>
-                      <span className="text-zinc-500 block mb-1">Risk</span>
-                      <span className="text-zinc-300">{gap.risk}</span>
-                    </div>
+                    <div><span className="text-zinc-500 block mb-1">Addressability</span><span className="text-zinc-300">{gap.addressability}</span></div>
+                    <div><span className="text-zinc-500 block mb-1">Risk</span><span className="text-zinc-300">{gap.risk}</span></div>
                   </div>
                 </div>
               ))}
@@ -118,26 +121,18 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
         {/* Recommendations */}
         {recommendations.length > 0 && (
           <section>
-            <h2 className="text-xs font-medium uppercase tracking-widest text-zinc-500 mb-6">Strategic Recommendations</h2>
+            <SectionLabel>Strategic Recommendations</SectionLabel>
             <div className="space-y-4">
               {recommendations.map((rec, i) => (
                 <div key={i} className="border border-zinc-800 rounded-lg p-5">
                   <div className="flex items-center gap-2 mb-3">
-                    <span className="text-xs font-medium bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded">
-                      {rec.type}
-                    </span>
-                    <span className="text-xs text-zinc-500">#{i + 1}</span>
+                    <span className="text-xs font-medium bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded">{rec.type}</span>
+                    <span className="text-xs text-zinc-600">#{i + 1}</span>
                   </div>
                   <p className="text-sm text-zinc-100 mb-3">{rec.description}</p>
                   <div className="grid grid-cols-2 gap-4 text-xs">
-                    <div>
-                      <span className="text-zinc-500 block mb-1">Expected impact</span>
-                      <span className="text-zinc-300">{rec.impact}</span>
-                    </div>
-                    <div>
-                      <span className="text-zinc-500 block mb-1">Key risk</span>
-                      <span className="text-zinc-300">{rec.risk}</span>
-                    </div>
+                    <div><span className="text-zinc-500 block mb-1">Expected impact</span><span className="text-zinc-300">{rec.impact}</span></div>
+                    <div><span className="text-zinc-500 block mb-1">Key risk</span><span className="text-zinc-300">{rec.risk}</span></div>
                   </div>
                 </div>
               ))}
@@ -150,14 +145,18 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
   )
 }
 
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return <h2 className="text-xs font-medium uppercase tracking-widest text-zinc-500 mb-6">{children}</h2>
+}
+
 function ThreatBadge({ level }: { level: string }) {
-  const colors = {
-    high: 'bg-red-950 text-red-300 border-red-800',
+  const colors: Record<string, string> = {
+    high:   'bg-red-950 text-red-300 border-red-800',
     medium: 'bg-yellow-950 text-yellow-300 border-yellow-800',
-    low: 'bg-zinc-800 text-zinc-400 border-zinc-700',
+    low:    'bg-zinc-800 text-zinc-400 border-zinc-700',
   }
   return (
-    <span className={`text-xs px-2 py-0.5 rounded border capitalize ${colors[level as keyof typeof colors] ?? colors.low}`}>
+    <span className={`text-xs px-2 py-0.5 rounded border capitalize ${colors[level] ?? colors.low}`}>
       {level}
     </span>
   )
