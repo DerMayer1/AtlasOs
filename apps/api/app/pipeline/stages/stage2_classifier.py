@@ -25,7 +25,8 @@ Rules:
 - Be specific. Avoid generic labels like "AI software" or "SaaS platform".
 - Use the language of practitioners, not marketers.
 - The definition should describe what the category does, not what the company does.
-- 1-2 sentences maximum for the definition."""
+- Category label: 5-10 words maximum.
+- Definition: 1-2 sentences maximum."""
 
 
 class CategoryOutput(BaseModel):
@@ -40,10 +41,13 @@ class CategoryClassifierStage(PipelineStage):
     is_critical = True  # No category → no search queries → abort
 
     async def execute(self, ctx: PipelineContext) -> None:
+        # Limit website content to avoid token overflow
+        raw_excerpt = ctx.raw_text[:3000] if ctx.raw_text else "Not available"
+
         user_content = f"""Company: {ctx.input.company_name}
 Description: {ctx.input.description}
-Website content (excerpt): {ctx.raw_text[:3000] if ctx.raw_text else "Not available"}
-Target market: {ctx.input.target_market or "Not specified"}"""
+Website content (excerpt): {raw_excerpt}
+Target market: {ctx.input.target_market or 'Not specified'}"""
 
         response = await client.beta.chat.completions.parse(
             model="gpt-4o",
@@ -58,5 +62,9 @@ Target market: {ctx.input.target_market or "Not specified"}"""
 
         result = response.choices[0].message.parsed
         if result:
-            ctx.category = Category(label=result.label, definition=result.definition)
+            # Enforce label length — truncate if LLM ignored the instruction
+            label = result.label[:80]
+            ctx.category = Category(label=label, definition=result.definition)
             logger.info(f"[Stage 2] Category: {ctx.category.label}")
+        else:
+            raise ValueError("LLM returned empty category output")
