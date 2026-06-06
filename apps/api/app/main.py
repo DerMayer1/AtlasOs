@@ -8,8 +8,10 @@ from app.logging_config import configure_logging
 from app.middleware.correlation import CorrelationIDMiddleware
 from app.middleware.rate_limit import limiter
 from app.routers import analyses, auth, health
+from app.startup import run_startup_checks
 
 configure_logging()
+run_startup_checks()
 
 app = FastAPI(
     title="AtlasOS API",
