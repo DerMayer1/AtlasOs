@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 
@@ -17,6 +18,24 @@ app = FastAPI(
 )
 
 app.state.limiter = limiter
+
+# Request body size limit — 64KB max
+# Prevents memory exhaustion from oversized payloads
+MAX_BODY_SIZE = 64 * 1024  # 64KB
+
+
+@app.middleware("http")
+async def limit_body_size(request: Request, call_next):
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > MAX_BODY_SIZE:
+        return JSONResponse(
+            status_code=413,
+            content={"error": {"code": "PAYLOAD_TOO_LARGE", "message": "Request body must be under 64KB."}},
+        )
+    return await call_next(request)
+
+
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 app.add_middleware(
     CORSMiddleware,
