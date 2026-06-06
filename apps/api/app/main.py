@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 
 from app.logging_config import configure_logging
+from app.middleware.correlation import CorrelationIDMiddleware
 from app.middleware.rate_limit import limiter
 from app.routers import analyses, auth, health
 
@@ -36,6 +37,7 @@ async def limit_body_size(request: Request, call_next):
 
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+app.add_middleware(CorrelationIDMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
