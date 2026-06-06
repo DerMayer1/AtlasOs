@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -14,17 +16,28 @@ from app.startup import run_startup_checks
 configure_logging()
 run_startup_checks()
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    yield
+    # Shutdown — close connections cleanly
+    from app.db.client import close_client
+    from app.queue.client import close_redis
+    await close_client()
+    await close_redis()
+
+
 app = FastAPI(
     title="AtlasOS API",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 app.state.limiter = limiter
 
-# Request body size limit — 64KB max
-# Prevents memory exhaustion from oversized payloads
 MAX_BODY_SIZE = 64 * 1024  # 64KB
 
 
