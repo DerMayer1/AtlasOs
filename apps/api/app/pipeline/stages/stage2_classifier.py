@@ -37,6 +37,7 @@ class CategoryClassifierStage(PipelineStage):
     stage_number = 2
     stage_name = "Category Classifier"
     timeout_s = 10
+    is_critical = True  # No category → no search queries → abort
 
     async def execute(self, ctx: PipelineContext) -> None:
         user_content = f"""Company: {ctx.input.company_name}

@@ -1,11 +1,13 @@
 """
 Pipeline Runner
 Executes all stages sequentially, passing PipelineContext through each.
-Stages 1-4 implemented. Stages 5-8 are stubs to be filled in Week 3.
+Accepts an optional event_callback for SSE progress publishing.
 """
 from __future__ import annotations
 
 import logging
+import time
+from collections.abc import Awaitable, Callable
 
 from app.pipeline.context import CompanyInput, PipelineContext
 from app.pipeline.stages.stage1_extractor import WebsiteExtractorStage
@@ -19,6 +21,8 @@ from app.pipeline.stages.stage8_memo import MemoComposerStage
 
 logger = logging.getLogger(__name__)
 
+EventCallback = Callable[[str, dict], Awaitable[None]]
+
 STAGES = [
     WebsiteExtractorStage(),
     CategoryClassifierStage(),
@@ -31,14 +35,30 @@ STAGES = [
 ]
 
 
-async def run_pipeline(company_input: CompanyInput) -> PipelineContext:
+async def run_pipeline(
+    company_input: CompanyInput,
+    on_event: EventCallback | None = None,
+) -> PipelineContext:
     ctx = PipelineContext(input=company_input)
     logger.info(f"Pipeline starting for: {company_input.company_name}")
 
     for stage in STAGES:
+        if on_event:
+            await on_event("stage_start", {
+                "stage": stage.stage_number,
+                "name": stage.stage_name,
+            })
+
+        t0 = time.perf_counter()
         await stage.run(ctx)
-        # If a critical stage fails (1-4), we can still continue with degraded output
-        # The stage itself logs the error and leaves partial state intact
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+
+        if on_event:
+            await on_event("stage_complete", {
+                "stage": stage.stage_number,
+                "name": stage.stage_name,
+                "duration_ms": duration_ms,
+            })
 
     logger.info(
         f"Pipeline complete for {company_input.company_name} — "

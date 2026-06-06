@@ -54,6 +54,7 @@ class CompetitorClassifierStage(PipelineStage):
     stage_number = 4
     stage_name = "Competitor Classifier"
     timeout_s = 12
+    is_critical = True  # No competitors → no positioning → abort
 
     async def execute(self, ctx: PipelineContext) -> None:
         if not ctx.search_results:

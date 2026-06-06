@@ -5,14 +5,23 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 
+from app.db.client import get_client
 from app.db.repositories.analyses import (
     create_analysis,
     delete_analysis,
     get_analysis,
     list_analyses,
+    update_analysis_status,
 )
-from app.db.repositories.memos import get_memo_by_analysis
+from app.db.repositories.memos import get_memo_by_analysis, create_memo
 from app.middleware.auth import require_auth
+from app.middleware.rate_limit import limiter
+from app.pipeline.guards import (
+    PipelineGuardError,
+    check_cache,
+    check_concurrent_limit,
+    write_cache,
+)
 from app.queue.client import enqueue_analysis
 from app.schemas import CreateAnalysisRequest, ExportMemoRequest
 
@@ -21,21 +30,49 @@ router = APIRouter(tags=["analyses"])
 
 
 @router.post("", status_code=status.HTTP_202_ACCEPTED)
+@limiter.limit("10/hour")
 async def create_analysis_endpoint(
+    request,  # required by slowapi
     body: CreateAnalysisRequest,
     user: dict = Depends(require_auth),
 ) -> dict:
     user_id = user["sub"]
     input_data = body.model_dump()
 
+    db = await get_client()
+
+    # Guard 1: concurrent analysis limit
+    try:
+        await check_concurrent_limit(user_id, db)
+    except PipelineGuardError as e:
+        raise HTTPException(status_code=429, detail={"code": e.code, "message": e.message})
+
+    # Guard 2: cache check — return existing result if URL+depth was recently analyzed
+    cached_result = await check_cache(body.website_url, body.analysis_depth)
+    if cached_result:
+        # Create a pre-completed analysis record from cache
+        record = await create_analysis(user_id, input_data, body.analysis_depth)
+        analysis_id = record["id"]
+        await update_analysis_status(analysis_id, "complete", result=cached_result, duration_ms=0)
+        if cached_result.get("memo_markdown"):
+            await create_memo(analysis_id, cached_result["memo_markdown"])
+        logger.info(f"[Router] Cache hit — returning pre-completed analysis {analysis_id}")
+        return {
+            "id": analysis_id,
+            "status": "complete",
+            "cached": True,
+            "created_at": record["created_at"],
+            "stream_url": f"/v1/analyses/{analysis_id}/stream",
+        }
+
     record = await create_analysis(user_id, input_data, body.analysis_depth)
     analysis_id = record["id"]
-
     await enqueue_analysis(analysis_id, input_data)
 
     return {
         "id": analysis_id,
         "status": "pending",
+        "cached": False,
         "created_at": record["created_at"],
         "stream_url": f"/v1/analyses/{analysis_id}/stream",
     }

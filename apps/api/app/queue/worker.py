@@ -16,8 +16,12 @@ from app.db.repositories.analyses import update_analysis_status
 from app.db.repositories.memos import create_memo
 from app.logging_config import configure_logging
 from app.pipeline.context import CompanyInput
+from app.pipeline.guards import write_cache
 from app.pipeline.runner import run_pipeline
 from app.queue.client import PIPELINE_QUEUE, get_redis
+
+# Maximum times a job can be retried before being dropped
+MAX_RETRIES = 0  # No retries — fail fast, surface error to user immediately
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -47,9 +51,20 @@ async def process_job(job: dict) -> None:
             analysis_depth=job.get("analysis_depth", "standard"),
         )
 
-        ctx = await run_pipeline(company_input)
+        async def on_event(event: str, data: dict) -> None:
+            await publish_event(analysis_id, event, data)
+
+        ctx = await run_pipeline(company_input, on_event=on_event)
 
         duration_ms = int((time.perf_counter() - t0) * 1000)
+
+        # Abort: pipeline was short-circuited due to critical stage failure
+        if ctx.aborted:
+            error_msg = f"Pipeline aborted at stage {ctx.abort_stage}"
+            logger.error(f"[Worker] {error_msg} for {analysis_id}")
+            await update_analysis_status(analysis_id, "failed", error=error_msg)
+            await publish_event(analysis_id, "analysis_failed", {"analysis_id": analysis_id, "error": error_msg})
+            return
 
         if ctx.errors:
             await update_analysis_status(analysis_id, "failed", error=str(ctx.errors))
@@ -70,10 +85,15 @@ async def process_job(job: dict) -> None:
             } if ctx.positioning_map else None,
             "gaps": [{"description": g.description, "addressability": g.addressability, "risk": g.risk} for g in ctx.gaps],
             "recommendations": [{"type": r.type, "description": r.description, "impact": r.impact, "risk": r.risk} for r in ctx.recommendations],
+            "memo_markdown": ctx.memo_markdown,
         }
 
         await update_analysis_status(analysis_id, "complete", result=result, duration_ms=duration_ms)
         await create_memo(analysis_id, ctx.memo_markdown)
+
+        # Cache successful result to prevent duplicate LLM calls for same URL
+        await write_cache(job["website_url"], job.get("analysis_depth", "standard"), result)
+
         await publish_event(analysis_id, "analysis_complete", {"analysis_id": analysis_id, "status": "complete"})
         logger.info(f"[Worker] Analysis {analysis_id} complete in {duration_ms}ms")
 

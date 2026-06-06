@@ -70,18 +70,27 @@ class PipelineContext:
     input: CompanyInput
 
     # Stage outputs — populated as pipeline progresses
-    raw_text: str = ""                          # Stage 1
-    category: Category | None = None            # Stage 2
-    search_results: list[dict[str, Any]] = field(default_factory=list)   # Stage 3
-    competitors: list[Competitor] = field(default_factory=list)          # Stage 4
-    positioning_map: PositioningMap | None = None                        # Stage 5
-    gaps: list[Gap] = field(default_factory=list)                        # Stage 6
-    recommendations: list[Recommendation] = field(default_factory=list)  # Stage 7
-    memo_markdown: str = ""                     # Stage 8
+    raw_text: str = ""                                                       # Stage 1
+    category: Category | None = None                                         # Stage 2
+    search_results: list[dict[str, Any]] = field(default_factory=list)      # Stage 3
+    competitors: list[Competitor] = field(default_factory=list)             # Stage 4
+    positioning_map: PositioningMap | None = None                           # Stage 5
+    gaps: list[Gap] = field(default_factory=list)                           # Stage 6
+    recommendations: list[Recommendation] = field(default_factory=list)    # Stage 7
+    memo_markdown: str = ""                                                  # Stage 8
 
     # Execution metadata
     current_stage: int = 0
     errors: list[dict[str, Any]] = field(default_factory=list)
 
+    # Abort state — set when a critical stage fails to prevent wasting LLM calls
+    aborted: bool = False
+    abort_stage: int = 0
+
     def record_error(self, stage: int, name: str, error: str) -> None:
         self.errors.append({"stage": stage, "name": name, "error": error})
+
+    def abort(self, stage: int) -> None:
+        """Mark pipeline as aborted. All subsequent critical stages will be skipped."""
+        self.aborted = True
+        self.abort_stage = stage
