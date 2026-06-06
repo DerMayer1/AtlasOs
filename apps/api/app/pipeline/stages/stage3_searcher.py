@@ -19,15 +19,20 @@ client = AsyncTavilyClient(api_key=settings.tavily_api_key)
 
 
 def _build_queries(ctx: PipelineContext) -> list[str]:
-    category = ctx.category.label if ctx.category else ctx.input.description
-    name = ctx.input.company_name
+    # Use the classified category label — much more precise than raw description
+    # Falls back to description only if Stage 2 was skipped (should not happen in normal flow)
+    category = ctx.category.label if ctx.category else ctx.input.description[:80]
+    target = ctx.input.target_market or "B2B"
+
     queries = [
-        f"{category} software companies competitors alternatives",
-        f"best {category} tools {ctx.input.target_market or 'B2B'} 2024 2025",
+        f"{category} software competitors alternatives",
+        f"best {category} tools {target} 2025",
     ]
+
     if ctx.input.known_competitors:
-        # Enrich known competitors with context
-        queries.append(f"{' '.join(ctx.input.known_competitors[:3])} {category} comparison")
+        known = " vs ".join(ctx.input.known_competitors[:3])
+        queries.append(f"{known} {category} comparison")
+
     return queries
 
 
@@ -62,4 +67,4 @@ class CompetitorSearcherStage(PipelineStage):
                 logger.warning(f"[Stage 3] Search failed for query '{query}': {e}")
 
         ctx.search_results = all_results[:10]
-        logger.info(f"[Stage 3] Found {len(ctx.search_results)} results")
+        logger.info(f"[Stage 3] Found {len(ctx.search_results)} results across {len(queries)} queries")
