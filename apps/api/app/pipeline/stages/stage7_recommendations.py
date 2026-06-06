@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from app.config import settings
 from app.pipeline.base import PipelineStage
 from app.pipeline.context import PipelineContext, Recommendation
+from app.pipeline.validator import validate_recommendations
 
 logger = logging.getLogger(__name__)
 client = AsyncOpenAI(api_key=settings.openai_api_key)
@@ -48,6 +49,7 @@ class RecommendationEngineStage(PipelineStage):
     stage_number = 7
     stage_name = "Recommendation Engine"
     timeout_s = 8
+    max_retries = 1
 
     async def execute(self, ctx: PipelineContext) -> None:
         gaps_text = "\n".join(f"- {g.description}" for g in ctx.gaps) if ctx.gaps else "No gaps identified."
@@ -81,8 +83,9 @@ Produce 3 prioritized strategic recommendations."""
 
         result = response.choices[0].message.parsed
         if result:
-            ctx.recommendations = [
+            raw = [
                 Recommendation(type=r.type, description=r.description, impact=r.impact, risk=r.risk)
                 for r in result.recommendations
             ]
+            ctx.recommendations = validate_recommendations(raw)
             logger.info(f"[Stage 7] Generated {len(ctx.recommendations)} recommendations")

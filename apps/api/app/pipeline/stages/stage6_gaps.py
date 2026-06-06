@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from app.config import settings
 from app.pipeline.base import PipelineStage
 from app.pipeline.context import Gap, PipelineContext
+from app.pipeline.validator import validate_gaps
 
 logger = logging.getLogger(__name__)
 client = AsyncOpenAI(api_key=settings.openai_api_key)
@@ -43,6 +44,7 @@ class GapDetectorStage(PipelineStage):
     stage_number = 6
     stage_name = "Gap Detector"
     timeout_s = 8
+    max_retries = 1
 
     async def execute(self, ctx: PipelineContext) -> None:
         if not ctx.positioning_map:
@@ -80,5 +82,6 @@ Identify the underserved gaps in this competitive landscape."""
 
         result = response.choices[0].message.parsed
         if result:
-            ctx.gaps = [Gap(description=g.description, addressability=g.addressability, risk=g.risk) for g in result.gaps]
+            raw_gaps = [Gap(description=g.description, addressability=g.addressability, risk=g.risk) for g in result.gaps]
+            ctx.gaps = validate_gaps(raw_gaps)
             logger.info(f"[Stage 6] Identified {len(ctx.gaps)} market gaps")
