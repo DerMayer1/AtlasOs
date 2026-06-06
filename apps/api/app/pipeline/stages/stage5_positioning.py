@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from app.config import settings
 from app.pipeline.base import PipelineStage
 from app.pipeline.context import PipelineContext, PositioningEntity, PositioningMap
+from app.pipeline.validator import validate_positioning_map
 
 logger = logging.getLogger(__name__)
 client = AsyncOpenAI(api_key=settings.openai_api_key)
@@ -88,7 +89,7 @@ Define two strategic axes and plot every competitor + the subject company."""
 
         result = response.choices[0].message.parsed
         if result:
-            ctx.positioning_map = PositioningMap(
+            pm = PositioningMap(
                 x_axis={"label": result.x_axis.label, "low": result.x_axis.low, "high": result.x_axis.high},
                 y_axis={"label": result.y_axis.label, "low": result.y_axis.low, "high": result.y_axis.high},
                 entities=[
@@ -96,4 +97,5 @@ Define two strategic axes and plot every competitor + the subject company."""
                     for e in result.entities
                 ],
             )
+            ctx.positioning_map = validate_positioning_map(pm)
             logger.info(f"[Stage 5] Axes: {result.x_axis.label} / {result.y_axis.label}")

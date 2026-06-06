@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from app.config import settings
 from app.pipeline.base import PipelineStage
 from app.pipeline.context import Competitor, PipelineContext
+from app.pipeline.validator import validate_competitors
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +89,7 @@ Also include these known competitors if not already in the list: {ctx.input.know
 
         result = response.choices[0].message.parsed
         if result:
-            ctx.competitors = [
+            raw = [
                 Competitor(
                     name=c.name,
                     website=c.website,
@@ -99,4 +100,5 @@ Also include these known competitors if not already in the list: {ctx.input.know
                 )
                 for c in result.competitors
             ]
-            logger.info(f"[Stage 4] Classified {len(ctx.competitors)} competitors")
+            ctx.competitors = validate_competitors(raw)
+            logger.info(f"[Stage 4] Classified {len(ctx.competitors)} competitors (after dedup/validation)")
