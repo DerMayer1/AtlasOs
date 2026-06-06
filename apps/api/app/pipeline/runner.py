@@ -12,6 +12,10 @@ from app.pipeline.stages.stage1_extractor import WebsiteExtractorStage
 from app.pipeline.stages.stage2_classifier import CategoryClassifierStage
 from app.pipeline.stages.stage3_searcher import CompetitorSearcherStage
 from app.pipeline.stages.stage4_competitor_classifier import CompetitorClassifierStage
+from app.pipeline.stages.stage5_positioning import PositioningAnalyzerStage
+from app.pipeline.stages.stage6_gaps import GapDetectorStage
+from app.pipeline.stages.stage7_recommendations import RecommendationEngineStage
+from app.pipeline.stages.stage8_memo import MemoComposerStage
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +24,10 @@ STAGES = [
     CategoryClassifierStage(),
     CompetitorSearcherStage(),
     CompetitorClassifierStage(),
-    # Stages 5-8 will be added in Week 3
+    PositioningAnalyzerStage(),
+    GapDetectorStage(),
+    RecommendationEngineStage(),
+    MemoComposerStage(),
 ]
 
 
