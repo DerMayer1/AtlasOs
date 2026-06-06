@@ -19,6 +19,7 @@ dependencies = [
     "weasyprint>=65.1",
     "python-multipart>=0.0.20",
     "slowapi>=0.1.9",
+    "markdown>=3.7",
 ]
 
 [project.optional-dependencies]
