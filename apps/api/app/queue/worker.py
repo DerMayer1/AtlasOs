@@ -103,19 +103,44 @@ async def process_job(job: dict) -> None:
         await publish_event(analysis_id, "analysis_failed", {"analysis_id": analysis_id, "error": str(e)})
 
 
+_shutdown = False
+
+
 async def run_worker() -> None:
+    import signal
+
+    def _handle_shutdown(sig, frame):
+        global _shutdown
+        logger.info(f"[Worker] Received signal {sig} — draining and shutting down...")
+        _shutdown = True
+
+    signal.signal(signal.SIGTERM, _handle_shutdown)
+    signal.signal(signal.SIGINT, _handle_shutdown)
+
     logger.info("[Worker] Starting — listening on queue: " + PIPELINE_QUEUE)
     r = await get_redis()
-    while True:
+
+    pending_tasks: set[asyncio.Task] = set()
+
+    while not _shutdown:
         try:
             item = await r.blpop(PIPELINE_QUEUE, timeout=5)
             if item:
                 _, raw = item
                 job = json.loads(raw)
-                asyncio.create_task(process_job(job))
+                task = asyncio.create_task(process_job(job))
+                pending_tasks.add(task)
+                task.add_done_callback(pending_tasks.discard)
         except Exception as e:
             logger.error(f"[Worker] Queue error: {e}")
             await asyncio.sleep(1)
+
+    # Drain: wait for in-flight jobs to complete before exiting
+    if pending_tasks:
+        logger.info(f"[Worker] Draining {len(pending_tasks)} in-flight jobs...")
+        await asyncio.gather(*pending_tasks, return_exceptions=True)
+
+    logger.info("[Worker] Shutdown complete")
 
 
 if __name__ == "__main__":
