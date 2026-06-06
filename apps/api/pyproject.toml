@@ -1,0 +1,45 @@
+[project]
+name = "atlasos-api"
+version = "0.1.0"
+description = "AtlasOS — FastAPI Backend"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "pydantic>=2.11.0",
+    "pydantic-settings>=2.9.0",
+    "supabase>=2.15.0",
+    "python-jose[cryptography]>=3.4.0",
+    "httpx>=0.28.0",
+    "openai>=1.84.0",
+    "tavily-python>=0.5.0",
+    "playwright>=1.52.0",
+    "beautifulsoup4>=4.13.0",
+    "redis>=6.2.0",
+    "weasyprint>=65.1",
+    "python-multipart>=0.0.20",
+    "slowapi>=0.1.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.4.0",
+    "pytest-asyncio>=1.0.0",
+    "pytest-httpx>=0.35.0",
+    "ruff>=0.11.0",
+    "mypy>=1.16.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
