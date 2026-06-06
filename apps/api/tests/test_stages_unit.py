@@ -26,7 +26,8 @@ class TestWebsiteExtractor:
         from app.pipeline.stages.stage1_extractor import WebsiteExtractorStage
 
         mock_response = MagicMock()
-        mock_response.text = "<html><body><h1>Hello</h1><p>World product description</p></body></html>"
+        html = "<html><body><h1>Hello</h1><p>World product description</p></body></html>"
+        mock_response.content = html.encode("utf-8")
         mock_response.raise_for_status = MagicMock()
 
         with patch("httpx.AsyncClient") as mock_client_cls:
