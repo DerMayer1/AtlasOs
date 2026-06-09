@@ -70,7 +70,16 @@ cp .env.example .env
 # Fill in: OPENAI_API_KEY, TAVILY_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_KEY
 ```
 
-### 3. Run
+### 3. Apply database migrations
+
+```bash
+cd apps/api
+python migrations/run_migration.py
+```
+
+This requires `SUPABASE_DB_URL` from the Supabase database connection settings.
+
+### 4. Run
 
 ```bash
 # Terminal 1 — Frontend
