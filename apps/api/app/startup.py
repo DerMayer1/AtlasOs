@@ -1,7 +1,6 @@
 """
 Startup Validator
-Validates all required environment variables and service connectivity
-before the application starts accepting traffic.
+Validates all required settings before the application starts accepting traffic.
 Fails fast with a descriptive error rather than crashing mid-request.
 """
 from __future__ import annotations
@@ -11,22 +10,27 @@ import sys
 
 logger = logging.getLogger(__name__)
 
-REQUIRED_VARS = [
-    "OPENAI_API_KEY",
-    "TAVILY_API_KEY",
-    "SUPABASE_URL",
-    "SUPABASE_SERVICE_KEY",
-    "REDIS_URL",
-]
-
 
 def validate_env() -> None:
-    """Check all required env vars are present and non-empty."""
-    import os
-    missing = [var for var in REQUIRED_VARS if not os.environ.get(var)]
+    """Check all required settings are present and non-empty via the Settings object."""
+    from app.config import settings
+
+    missing = []
+    if not settings.openai_api_key:
+        missing.append("OPENAI_API_KEY")
+    if not settings.tavily_api_key:
+        missing.append("TAVILY_API_KEY")
+    if not settings.supabase_url:
+        missing.append("SUPABASE_URL")
+    if not settings.supabase_service_key:
+        missing.append("SUPABASE_SERVICE_KEY")
+    if not settings.redis_url:
+        missing.append("REDIS_URL")
+
     if missing:
-        logger.critical(f"[Startup] Missing required environment variables: {missing}")
+        logger.critical(f"[Startup] Missing required settings: {missing}")
         sys.exit(1)
+
     logger.info("[Startup] Environment validation passed")
 
 
