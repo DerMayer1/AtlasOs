@@ -36,7 +36,11 @@ export default function NewAnalysisPage() {
           : [],
         analysis_depth: form.analysis_depth,
       })
-      router.push(`/dashboard/analyses/${analysis.id}`)
+      router.push(
+        analysis.status === 'complete'
+          ? `/dashboard/analyses/${analysis.id}`
+          : `/dashboard/analyses/${analysis.id}/progress`,
+      )
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
       setLoading(false)

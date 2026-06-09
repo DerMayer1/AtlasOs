@@ -1,5 +1,9 @@
 import type { NextConfig } from 'next'
+import { existsSync } from 'fs'
 import path from 'path'
+
+const rootEnv = path.resolve(__dirname, '../../.env')
+if (existsSync(rootEnv)) process.loadEnvFile(rootEnv)
 
 const nextConfig: NextConfig = {
   turbopack: {
