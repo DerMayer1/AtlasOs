@@ -1,10 +1,12 @@
 """
 Unit tests for pipeline abort chain and guards.
 """
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import AsyncMock, patch
-from app.pipeline.context import CompanyInput, PipelineContext
+
 from app.pipeline.base import PipelineStage
+from app.pipeline.context import CompanyInput, PipelineContext
 
 
 class MockCriticalStage(PipelineStage):
@@ -76,3 +78,20 @@ class TestAbortChain:
 
         assert ctx.aborted is False
         assert len(ctx.errors) == 1
+
+    @pytest.mark.asyncio
+    async def test_runner_stops_and_emits_failed_event_after_abort(self):
+        from app.pipeline import runner
+
+        events = []
+
+        async def on_event(event, data):
+            events.append((event, data))
+
+        with patch.object(runner, "STAGES", [MockCriticalStage(), MockNonCriticalStage()]):
+            MockNonCriticalStage.executed = False
+            ctx = await runner.run_pipeline(make_ctx().input, on_event=on_event)
+
+        assert ctx.aborted is True
+        assert MockNonCriticalStage.executed is False
+        assert [event for event, _ in events] == ["stage_start", "stage_failed"]

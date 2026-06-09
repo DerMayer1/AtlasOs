@@ -53,6 +53,17 @@ async def run_pipeline(
         await stage.run(ctx)
         duration_ms = int((time.perf_counter() - t0) * 1000)
 
+        if ctx.aborted:
+            if on_event:
+                error = ctx.errors[-1]["error"] if ctx.errors else "Critical stage failed"
+                await on_event("stage_failed", {
+                    "stage": stage.stage_number,
+                    "name": stage.stage_name,
+                    "duration_ms": duration_ms,
+                    "error": error,
+                })
+            break
+
         if on_event:
             await on_event("stage_complete", {
                 "stage": stage.stage_number,
