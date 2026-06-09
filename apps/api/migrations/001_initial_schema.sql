@@ -71,6 +71,7 @@ create table if not exists public.exports (
 );
 
 create index if not exists exports_user_id_idx on public.exports(user_id);
+create index if not exists exports_memo_id_idx on public.exports(memo_id);
 
 -- ── Row Level Security ───────────────────────────────────
 alter table public.users      enable row level security;
@@ -80,44 +81,53 @@ alter table public.memos      enable row level security;
 alter table public.exports    enable row level security;
 
 -- Users can only read/update their own profile
+drop policy if exists "users: own row" on public.users;
 create policy "users: own row" on public.users
-  for all using (auth.uid() = id);
+  for all using ((select auth.uid()) = id);
 
 -- Analyses scoped to owner
+drop policy if exists "analyses: own rows" on public.analyses;
 create policy "analyses: own rows" on public.analyses
-  for all using (auth.uid() = user_id);
+  for all using ((select auth.uid()) = user_id);
 
 -- Competitors visible only through owned analyses
+drop policy if exists "competitors: own analyses" on public.competitors;
 create policy "competitors: own analyses" on public.competitors
   for all using (
     exists (
       select 1 from public.analyses a
-      where a.id = analysis_id and a.user_id = auth.uid()
+      where a.id = analysis_id and a.user_id = (select auth.uid())
     )
   );
 
 -- Memos visible only through owned analyses
+drop policy if exists "memos: own analyses" on public.memos;
 create policy "memos: own analyses" on public.memos
   for all using (
     exists (
       select 1 from public.analyses a
-      where a.id = analysis_id and a.user_id = auth.uid()
+      where a.id = analysis_id and a.user_id = (select auth.uid())
     )
   );
 
 -- Exports scoped to owner
+drop policy if exists "exports: own rows" on public.exports;
 create policy "exports: own rows" on public.exports
-  for all using (auth.uid() = user_id);
+  for all using ((select auth.uid()) = user_id);
 
 -- ── updated_at trigger ───────────────────────────────────
 create or replace function public.set_updated_at()
-returns trigger language plpgsql as $$
+returns trigger
+language plpgsql
+set search_path = public
+as $$
 begin
   new.updated_at = now();
   return new;
 end;
 $$;
 
+drop trigger if exists users_updated_at on public.users;
 create trigger users_updated_at
   before update on public.users
   for each row execute function public.set_updated_at();
