@@ -1,4 +1,13 @@
-import type { Analysis, CompanyInput, Memo, PaginatedAnalyses } from '@atlasos/types'
+import type {
+  Analysis,
+  CompanyInput,
+  CreateAnalysisResponse,
+  CreateWorkspaceInput,
+  Memo,
+  PaginatedAnalyses,
+  Workspace,
+  WorkspaceListResponse,
+} from '@atlasos/types'
 import { createClient } from './supabase/client'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
@@ -19,15 +28,50 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
   })
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
-    throw Object.assign(new Error(body?.error?.message ?? 'Request failed'), { status: res.status, code: body?.error?.code })
+    const apiError = body?.error ?? body?.detail
+    throw Object.assign(new Error(apiError?.message ?? 'Request failed'), {
+      status: res.status,
+      code: apiError?.code,
+    })
   }
+  if (res.status === 204) return undefined as T
   return res.json()
 }
 
 export const api = {
+  workspaces: {
+    create: (input: CreateWorkspaceInput) =>
+      apiFetch<Workspace>('/v1/workspaces', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+
+    list: () => apiFetch<WorkspaceListResponse>('/v1/workspaces'),
+
+    get: (id: string) => apiFetch<Workspace>(`/v1/workspaces/${id}`),
+
+    discover: (id: string) =>
+      apiFetch<{ id: string; status: 'discovering' }>(
+        `/v1/workspaces/${id}/discover`,
+        { method: 'POST' },
+      ),
+
+    confirmCompanies: (id: string, companyIds: string[]) =>
+      apiFetch<Workspace>(`/v1/workspaces/${id}/companies`, {
+        method: 'PUT',
+        body: JSON.stringify({ company_ids: companyIds }),
+      }),
+
+    delete: (id: string) =>
+      apiFetch<void>(`/v1/workspaces/${id}`, { method: 'DELETE' }),
+  },
+
   analyses: {
     create: (input: CompanyInput) =>
-      apiFetch<Analysis>('/v1/analyses', { method: 'POST', body: JSON.stringify(input) }),
+      apiFetch<CreateAnalysisResponse>('/v1/analyses', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
 
     list: (params?: { limit?: number; offset?: number; status?: string }) => {
       const qs = new URLSearchParams(params as Record<string, string>).toString()
