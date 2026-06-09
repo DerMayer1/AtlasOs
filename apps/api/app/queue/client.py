@@ -21,7 +21,7 @@ async def get_redis() -> aioredis.Redis:
             settings.redis_url,
             decode_responses=True,
             socket_connect_timeout=5,
-            socket_timeout=5,
+            socket_timeout=None,   # None = no timeout on blocking ops (blpop)
             retry_on_timeout=True,
             health_check_interval=30,
         )
@@ -31,8 +31,23 @@ async def get_redis() -> aioredis.Redis:
 
 async def enqueue_analysis(analysis_id: str, payload: dict) -> None:
     r = await get_redis()
-    await r.rpush(PIPELINE_QUEUE, json.dumps({"analysis_id": analysis_id, **payload}))
+    await r.rpush(
+        PIPELINE_QUEUE,
+        json.dumps({"job_type": "analysis", "analysis_id": analysis_id, **payload}),
+    )
     logger.info(f"[Redis] Enqueued analysis {analysis_id}")
+
+
+async def enqueue_workspace_discovery(workspace_id: str) -> None:
+    r = await get_redis()
+    await r.rpush(
+        PIPELINE_QUEUE,
+        json.dumps({
+            "job_type": "workspace_discovery",
+            "workspace_id": workspace_id,
+        }),
+    )
+    logger.info(f"[Redis] Enqueued workspace discovery {workspace_id}")
 
 
 async def close_redis() -> None:

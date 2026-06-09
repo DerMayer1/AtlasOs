@@ -11,11 +11,16 @@ import json
 import logging
 import time
 
-from app.config import settings
 from app.db.repositories.analyses import update_analysis_status
 from app.db.repositories.memos import create_memo
+from app.db.repositories.workspaces import (
+    get_workspace_internal,
+    replace_discovered_companies,
+    update_workspace_status,
+)
 from app.logging_config import configure_logging
 from app.pipeline.context import CompanyInput
+from app.pipeline.discovery import run_discovery
 from app.pipeline.guards import write_cache
 from app.pipeline.runner import run_pipeline
 from app.queue.client import PIPELINE_QUEUE, get_redis
@@ -103,6 +108,68 @@ async def process_job(job: dict) -> None:
         await publish_event(analysis_id, "analysis_failed", {"analysis_id": analysis_id, "error": str(e)})
 
 
+async def process_workspace_discovery(job: dict) -> None:
+    workspace_id = job["workspace_id"]
+    logger.info(f"[Worker] Discovering competitors for workspace {workspace_id}")
+
+    try:
+        workspace = await get_workspace_internal(workspace_id)
+        if not workspace:
+            logger.warning(f"[Worker] Workspace {workspace_id} no longer exists")
+            return
+
+        company_input = CompanyInput(
+            company_name=workspace["company_name"],
+            website_url=workspace["website_url"],
+            description=workspace["description"],
+            target_market=workspace.get("target_market"),
+            analysis_depth="quick",
+        )
+        ctx = await run_discovery(company_input)
+
+        if ctx.aborted or ctx.errors:
+            error = ctx.errors[-1]["error"] if ctx.errors else "Discovery failed"
+            await update_workspace_status(workspace_id, "failed", error=error)
+            return
+
+        competitors = [
+            {
+                "name": competitor.name,
+                "website": competitor.website,
+                "type": competitor.type,
+                "threat_level": competitor.threat_level,
+                "summary": competitor.summary,
+                "positioning": competitor.positioning,
+            }
+            for competitor in ctx.competitors
+        ]
+        await replace_discovered_companies(workspace_id, competitors)
+        await update_workspace_status(
+            workspace_id,
+            "review",
+            category_label=ctx.category.label if ctx.category else None,
+            category_definition=ctx.category.definition if ctx.category else None,
+        )
+        logger.info(
+            f"[Worker] Workspace {workspace_id} ready for review "
+            f"with {len(competitors)} competitors"
+        )
+    except Exception as exc:
+        logger.exception(f"[Worker] Workspace discovery failed for {workspace_id}: {exc}")
+        await update_workspace_status(workspace_id, "failed", error=str(exc))
+
+
+async def dispatch_job(job: dict) -> None:
+    job_type = job.get("job_type", "analysis")
+    if job_type == "analysis":
+        await process_job(job)
+        return
+    if job_type == "workspace_discovery":
+        await process_workspace_discovery(job)
+        return
+    logger.error(f"[Worker] Unknown job type: {job_type}")
+
+
 _shutdown = False
 
 
@@ -124,13 +191,16 @@ async def run_worker() -> None:
 
     while not _shutdown:
         try:
-            item = await r.blpop(PIPELINE_QUEUE, timeout=5)
+            item = await r.blpop(PIPELINE_QUEUE, timeout=30)
             if item:
                 _, raw = item
                 job = json.loads(raw)
-                task = asyncio.create_task(process_job(job))
+                task = asyncio.create_task(dispatch_job(job))
                 pending_tasks.add(task)
                 task.add_done_callback(pending_tasks.discard)
+            # item is None when blpop times out with no jobs — this is normal
+        except asyncio.CancelledError:
+            break
         except Exception as e:
             logger.error(f"[Worker] Queue error: {e}")
             await asyncio.sleep(1)
