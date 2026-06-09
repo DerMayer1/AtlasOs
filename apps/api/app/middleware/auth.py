@@ -4,14 +4,11 @@ import logging
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
 
-from app.config import settings
+from app.db.client import get_client
 
 logger = logging.getLogger(__name__)
 bearer_scheme = HTTPBearer()
-
-SUPABASE_JWT_SECRET = settings.supabase_service_key
 
 
 async def require_auth(
@@ -20,23 +17,25 @@ async def require_auth(
 ) -> dict:
     token = credentials.credentials
     try:
-        payload = jwt.decode(
-            token,
-            SUPABASE_JWT_SECRET,
-            algorithms=["HS256"],
-            options={"verify_aud": False},
-        )
-        if not payload.get("sub"):
-            raise JWTError("Missing subject claim")
+        client = await get_client()
+        response = await client.auth.get_user(token)
+        user = response.user if response else None
+        if not user:
+            raise ValueError("Supabase returned no user")
+
+        payload = {
+            "sub": str(user.id),
+            "email": user.email,
+        }
 
         # Attach to request.state so rate limiter can key by user_id
         request.state.user = payload
         return payload
 
-    except JWTError as e:
+    except Exception as e:
         logger.warning(f"[Auth] JWT validation failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": "UNAUTHORIZED", "message": "Invalid or expired token."},
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from e
