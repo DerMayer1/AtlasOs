@@ -86,6 +86,14 @@ export interface Analysis {
   stream_url?: string
 }
 
+export interface CreateAnalysisResponse {
+  id: string
+  status: AnalysisStatus
+  cached: boolean
+  created_at: string
+  stream_url: string
+}
+
 export interface AnalysisListItem {
   id: string
   status: AnalysisStatus
@@ -116,6 +124,7 @@ export type SSEEventType =
   | 'pipeline_start'
   | 'stage_start'
   | 'stage_complete'
+  | 'stage_failed'
   | 'analysis_complete'
   | 'analysis_failed'
 
@@ -132,4 +141,54 @@ export interface APIError {
     message: string
     details?: Record<string, unknown>
   }
+}
+
+// ── Market workspaces ─────────────────────────────────────────────────────
+
+export type WorkspaceStatus = 'draft' | 'discovering' | 'review' | 'active' | 'failed'
+
+export interface TrackedCompany {
+  id: string
+  workspace_id: string
+  name: string
+  website_url: string | null
+  type: CompetitorType | 'subject'
+  threat_level: ThreatLevel | null
+  summary: string | null
+  positioning: string | null
+  is_subject: boolean
+  is_confirmed: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface Workspace {
+  id: string
+  user_id: string
+  name: string
+  company_name: string
+  website_url: string
+  description: string
+  target_market: string | null
+  category_label: string | null
+  category_definition: string | null
+  status: WorkspaceStatus
+  error: string | null
+  created_at: string
+  updated_at: string
+  companies: TrackedCompany[]
+}
+
+export type WorkspaceListItem = Omit<Workspace, 'companies'>
+
+export interface CreateWorkspaceInput {
+  name: string
+  company_name: string
+  website_url: string
+  description: string
+  target_market?: string
+}
+
+export interface WorkspaceListResponse {
+  items: WorkspaceListItem[]
 }

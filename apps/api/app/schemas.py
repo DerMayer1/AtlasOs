@@ -71,6 +71,91 @@ class ExportMemoRequest(BaseModel):
         return v
 
 
+class CreateWorkspaceRequest(BaseModel):
+    name: str
+    company_name: str
+    website_url: str
+    description: str
+    target_market: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        v = sanitize_text(v, max_length=100)
+        if not v:
+            raise ValueError("name cannot be empty")
+        return v
+
+    @field_validator("company_name")
+    @classmethod
+    def validate_company_name(cls, v: str) -> str:
+        v = sanitize_company_name(v)
+        if not v:
+            raise ValueError("company_name cannot be empty")
+        return v
+
+    @field_validator("website_url")
+    @classmethod
+    def validate_url(cls, v: str) -> str:
+        return sanitize_url(v)
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, v: str) -> str:
+        if len(v) > 500:
+            raise ValueError("description must be 500 characters or less")
+        return sanitize_description(v)
+
+    @field_validator("target_market")
+    @classmethod
+    def validate_target_market(cls, v: str | None) -> str | None:
+        return sanitize_text(v, max_length=100) if v is not None else None
+
+
+class UpdateWorkspaceRequest(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    target_market: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        value = sanitize_text(v, max_length=100)
+        if not value:
+            raise ValueError("name cannot be empty")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        value = sanitize_description(v)
+        if not value:
+            raise ValueError("description cannot be empty")
+        return value
+
+    @field_validator("target_market")
+    @classmethod
+    def validate_target_market(cls, v: str | None) -> str | None:
+        return sanitize_text(v, max_length=100) if v is not None else None
+
+
+class ConfirmTrackedCompaniesRequest(BaseModel):
+    company_ids: list[str]
+
+    @field_validator("company_ids")
+    @classmethod
+    def validate_company_ids(cls, v: list[str]) -> list[str]:
+        if not v:
+            raise ValueError("Select at least one competitor")
+        if len(v) > 20:
+            raise ValueError("company_ids must have 20 or fewer entries")
+        return list(dict.fromkeys(v))
+
+
 class ErrorDetail(BaseModel):
     code: str
     message: str
