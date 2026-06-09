@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { api } from '@/lib/api'
 
 const STAGES = [
   'Website Extractor',
@@ -24,29 +24,41 @@ export default function ProgressPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const [stages, setStages] = useState<StageState[]>(STAGES.map(() => ({ status: 'pending' })))
-  const [currentStage, setCurrentStage] = useState(-1)
   const [failed, setFailed] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
 
   useEffect(() => {
     let source: EventSource | null = null
+    let pollTimer: ReturnType<typeof setTimeout> | null = null
+    let stopped = false
 
-    async function connect() {
-      const supabase = createClient()
-      const { data } = await supabase.auth.getSession()
-      const token = data.session?.access_token
-      if (!token) {
-        router.push('/auth/login')
+    async function pollStatus() {
+      try {
+        const analysis = await api.analyses.get(id)
+        if (analysis.status === 'complete') {
+          router.push(`/dashboard/analyses/${id}`)
+          return
+        }
+        if (analysis.status === 'failed') {
+          setFailed(true)
+          setErrorMsg(analysis.error ?? 'Analysis failed')
+          return
+        }
+      } catch (error) {
+        setFailed(true)
+        setErrorMsg(error instanceof Error ? error.message : 'Could not load analysis status')
         return
       }
 
-      const apiBase = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
-      source = new EventSource(`${apiBase}/v1/analyses/${id}/stream?token=${token}`)
+      if (!stopped) pollTimer = setTimeout(pollStatus, 3000)
+    }
+
+    function connect() {
+      source = new EventSource(`/api/analyses/${id}/stream`)
 
       source.addEventListener('stage_start', (e) => {
         const { stage } = JSON.parse(e.data)
         const idx = stage - 1
-        setCurrentStage(idx)
         setStages((prev) => {
           const next = [...prev]
           next[idx] = { status: 'running' }
@@ -64,21 +76,44 @@ export default function ProgressPage() {
         })
       })
 
+      source.addEventListener('stage_failed', (e) => {
+        const { stage, error } = JSON.parse(e.data)
+        const idx = stage - 1
+        setStages((prev) => {
+          const next = [...prev]
+          next[idx] = { status: 'failed' }
+          return next
+        })
+        setFailed(true)
+        setErrorMsg(error)
+      })
+
       source.addEventListener('analysis_complete', () => {
+        stopped = true
         source?.close()
         router.push(`/dashboard/analyses/${id}`)
       })
 
       source.addEventListener('analysis_failed', (e) => {
         const { error } = JSON.parse(e.data)
+        stopped = true
         setFailed(true)
         setErrorMsg(error)
         source?.close()
       })
+
+      source.onerror = () => {
+        source?.close()
+        if (!stopped && !pollTimer) void pollStatus()
+      }
     }
 
     connect()
-    return () => source?.close()
+    return () => {
+      stopped = true
+      source?.close()
+      if (pollTimer) clearTimeout(pollTimer)
+    }
   }, [id, router])
 
   return (
