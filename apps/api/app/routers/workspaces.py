@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.db.repositories.workspaces import (
     confirm_tracked_companies,
@@ -8,13 +8,16 @@ from app.db.repositories.workspaces import (
     delete_workspace,
     get_workspace,
     get_workspace_with_companies,
+    list_snapshots,
     list_workspaces,
+    restore_companies_monitoring_status,
+    set_companies_monitoring_status,
     update_workspace,
     update_workspace_status,
 )
 from app.middleware.auth import require_auth
 from app.middleware.rate_limit import limiter
-from app.queue.client import enqueue_workspace_discovery
+from app.queue.client import enqueue_workspace_discovery, enqueue_workspace_snapshot
 from app.schemas import (
     ConfirmTrackedCompaniesRequest,
     CreateWorkspaceRequest,
@@ -29,6 +32,16 @@ def not_found() -> HTTPException:
         status_code=404,
         detail={"code": "WORKSPACE_NOT_FOUND", "message": "Workspace not found."},
     )
+
+
+async def enqueue_snapshot_baseline(workspace_id: str) -> bool:
+    await set_companies_monitoring_status(workspace_id, "pending")
+    try:
+        await enqueue_workspace_snapshot(workspace_id)
+    except Exception:
+        await restore_companies_monitoring_status(workspace_id)
+        return False
+    return True
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -124,4 +137,66 @@ async def confirm_companies_endpoint(
 
     await confirm_tracked_companies(workspace_id, body.company_ids)
     await update_workspace_status(workspace_id, "active")
+    await enqueue_snapshot_baseline(workspace_id)
     return await get_workspace_with_companies(workspace_id, user["sub"])
+
+
+@router.post("/{workspace_id}/snapshots", status_code=status.HTTP_202_ACCEPTED)
+@limiter.limit("12/hour")
+async def capture_snapshots_endpoint(
+    request,
+    workspace_id: str,
+    user: dict = Depends(require_auth),
+) -> dict:
+    workspace = await get_workspace_with_companies(workspace_id, user["sub"])
+    if not workspace:
+        raise not_found()
+    if workspace["status"] != "active":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "WORKSPACE_NOT_ACTIVE",
+                "message": "Confirm the competitive set before capturing snapshots.",
+            },
+        )
+    if any(
+        company["monitoring_status"] in ("pending", "running")
+        for company in workspace["companies"]
+        if company["is_confirmed"]
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "SNAPSHOT_RUNNING",
+                "message": "A workspace snapshot is already running.",
+            },
+        )
+
+    if not await enqueue_snapshot_baseline(workspace_id):
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "SNAPSHOT_QUEUE_UNAVAILABLE",
+                "message": "Monitoring could not be started. Try again shortly.",
+            },
+        )
+    return {"id": workspace_id, "status": "pending"}
+
+
+@router.get("/{workspace_id}/snapshots")
+async def list_snapshots_endpoint(
+    workspace_id: str,
+    company_id: str | None = None,
+    limit: int = Query(default=100, ge=1, le=500),
+    user: dict = Depends(require_auth),
+) -> dict:
+    workspace = await get_workspace(workspace_id, user["sub"])
+    if not workspace:
+        raise not_found()
+    return {
+        "items": await list_snapshots(
+            workspace_id,
+            company_id=company_id,
+            limit=limit,
+        )
+    }

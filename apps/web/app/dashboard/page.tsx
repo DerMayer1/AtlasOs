@@ -33,7 +33,7 @@ export default async function DashboardPage() {
             </p>
             <h1 className="text-3xl font-semibold">Monitored markets</h1>
             <p className="text-zinc-400 text-sm mt-2">
-              Define a market, confirm its competitors, then build a monitoring baseline.
+              Define a market, confirm its competitors, and capture a monitoring baseline.
             </p>
           </div>
           <Link

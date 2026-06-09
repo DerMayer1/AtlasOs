@@ -50,6 +50,18 @@ async def enqueue_workspace_discovery(workspace_id: str) -> None:
     logger.info(f"[Redis] Enqueued workspace discovery {workspace_id}")
 
 
+async def enqueue_workspace_snapshot(workspace_id: str) -> None:
+    r = await get_redis()
+    await r.rpush(
+        PIPELINE_QUEUE,
+        json.dumps({
+            "job_type": "workspace_snapshot",
+            "workspace_id": workspace_id,
+        }),
+    )
+    logger.info(f"[Redis] Enqueued workspace snapshot {workspace_id}")
+
+
 async def close_redis() -> None:
     global _redis
     if _redis:

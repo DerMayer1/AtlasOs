@@ -12,6 +12,7 @@ export default function WorkspacePage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -44,6 +45,24 @@ export default function WorkspacePage() {
 
     return () => clearTimeout(timer)
   }, [load, workspace?.status])
+
+  const monitoringInProgress =
+    workspace?.companies.some(
+      (company) =>
+        company.is_confirmed &&
+        (company.monitoring_status === 'pending' ||
+          company.monitoring_status === 'running'),
+    ) ?? false
+
+  useEffect(() => {
+    if (!monitoringInProgress) return
+
+    const timer = setTimeout(() => {
+      void load()
+    }, 2500)
+
+    return () => clearTimeout(timer)
+  }, [load, monitoringInProgress])
 
   const candidates = useMemo(
     () => workspace?.companies.filter((company) => !company.is_subject) ?? [],
@@ -80,6 +99,34 @@ export default function WorkspacePage() {
       )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not start discovery')
+    }
+  }
+
+  async function captureSnapshots() {
+    setRefreshing(true)
+    setError('')
+    try {
+      await api.workspaces.captureSnapshots(id)
+      setWorkspace((current) =>
+        current
+          ? {
+              ...current,
+              companies: current.companies.map((company) =>
+                company.is_confirmed
+                  ? {
+                      ...company,
+                      monitoring_status: 'pending',
+                      snapshot_error: null,
+                    }
+                  : company,
+              ),
+            }
+          : current,
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not refresh snapshots')
+    } finally {
+      setRefreshing(false)
     }
   }
 
@@ -199,6 +246,16 @@ export default function WorkspacePage() {
           </section>
         )}
 
+        {workspace.status === 'active' && (
+          <MonitoringBaseline
+            companies={workspace.companies.filter(
+              (company) => company.is_subject || company.is_confirmed,
+            )}
+            refreshing={refreshing || monitoringInProgress}
+            onRefresh={captureSnapshots}
+          />
+        )}
+
         {workspace.status === 'draft' && (
           <button
             onClick={retryDiscovery}
@@ -210,6 +267,116 @@ export default function WorkspacePage() {
       </div>
     </div>
   )
+}
+
+function MonitoringBaseline({
+  companies,
+  refreshing,
+  onRefresh,
+}: {
+  companies: Workspace['companies']
+  refreshing: boolean
+  onRefresh: () => void
+}) {
+  const ready = companies.filter(
+    (company) => company.monitoring_status === 'ready',
+  ).length
+
+  return (
+    <section className="mt-14 pt-10 border-t border-zinc-800">
+      <div className="flex items-end justify-between gap-6 mb-5">
+        <div>
+          <p className="text-xs uppercase tracking-widest text-zinc-500 mb-2">
+            Monitoring baseline
+          </p>
+          <h2 className="text-xl font-semibold">
+            {ready} of {companies.length} companies captured
+          </h2>
+          <p className="text-sm text-zinc-500 mt-1">
+            AtlasOS stores the visible website state used for future comparisons.
+          </p>
+        </div>
+        <button
+          onClick={onRefresh}
+          disabled={refreshing}
+          className="border border-zinc-700 text-sm px-4 py-2 rounded-md hover:border-zinc-500 disabled:opacity-40"
+        >
+          {refreshing ? 'Capturing…' : 'Refresh baseline'}
+        </button>
+      </div>
+
+      <div className="grid gap-3">
+        {companies.map((company) => (
+          <div
+            key={company.id}
+            className="border border-zinc-800 rounded-lg p-4 flex items-start justify-between gap-6"
+          >
+            <div>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium">{company.name}</p>
+                {company.is_subject ? (
+                  <span className="text-[10px] uppercase tracking-wide text-zinc-600">
+                    Your company
+                  </span>
+                ) : null}
+              </div>
+              {company.latest_snapshot ? (
+                <p className="text-xs text-zinc-500 mt-1">
+                  Captured {formatCapturedAt(company.latest_snapshot.captured_at)}
+                  {company.latest_snapshot.metadata.character_count
+                    ? ` · ${company.latest_snapshot.metadata.character_count.toLocaleString()} characters`
+                    : ''}
+                </p>
+              ) : (
+                <p className="text-xs text-zinc-600 mt-1">
+                  No baseline captured yet.
+                </p>
+              )}
+              {company.snapshot_error ? (
+                <p className="text-xs text-red-400 mt-2">
+                  {company.snapshot_error}
+                </p>
+              ) : null}
+            </div>
+            <MonitoringStatus status={company.monitoring_status} />
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function MonitoringStatus({
+  status,
+}: {
+  status: Workspace['companies'][number]['monitoring_status']
+}) {
+  const labels = {
+    idle: 'Not captured',
+    pending: 'Queued',
+    running: 'Capturing',
+    ready: 'Ready',
+    failed: 'Failed',
+  }
+  const styles = {
+    idle: 'text-zinc-500',
+    pending: 'text-blue-300',
+    running: 'text-blue-300',
+    ready: 'text-emerald-300',
+    failed: 'text-red-300',
+  }
+  return (
+    <span className={`text-xs whitespace-nowrap ${styles[status]}`}>
+      {labels[status]}
+    </span>
+  )
+}
+
+function formatCapturedAt(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value))
 }
 
 function DiscoveryState() {

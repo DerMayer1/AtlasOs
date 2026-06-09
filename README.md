@@ -3,7 +3,7 @@
 **Market intelligence & competitive cartography system.**
 Part of the [Montclair Intelligence Company](https://github.com/DerMayer1) suite.
 
-> Input a B2B company → get a structured competitive map, positioning analysis, and strategic memo in under 60 seconds.
+> Define a market, confirm the competitive set, and maintain website baselines for ongoing intelligence.
 
 ---
 
@@ -32,6 +32,20 @@ CompanyInput
   → [8] Memo Composer          (GPT-4o → Market Memo)
   → MarketMap + Market Memo (Markdown / PDF)
 ```
+
+### Market monitoring
+
+```
+Workspace
+  → Discover candidate competitors
+  → Confirm the competitive set
+  → Capture website snapshots for the subject and confirmed competitors
+  → Store content hashes and snapshot history for future change detection
+```
+
+Snapshot capture is deterministic and does not call an LLM. The first baseline is
+queued when the competitive set is confirmed; later refreshes are explicit user
+actions.
 
 ### Stack
 

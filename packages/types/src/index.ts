@@ -146,6 +146,23 @@ export interface APIError {
 // ── Market workspaces ─────────────────────────────────────────────────────
 
 export type WorkspaceStatus = 'draft' | 'discovering' | 'review' | 'active' | 'failed'
+export type MonitoringStatus = 'idle' | 'pending' | 'running' | 'ready' | 'failed'
+
+export interface CompanySnapshot {
+  id: string
+  workspace_id: string
+  company_id: string
+  website_url: string
+  final_url: string | null
+  page_title: string | null
+  page_description: string | null
+  content_hash: string
+  metadata: {
+    status_code?: number
+    character_count?: number
+  }
+  captured_at: string
+}
 
 export interface TrackedCompany {
   id: string
@@ -158,6 +175,10 @@ export interface TrackedCompany {
   positioning: string | null
   is_subject: boolean
   is_confirmed: boolean
+  monitoring_status: MonitoringStatus
+  last_snapshot_at: string | null
+  snapshot_error: string | null
+  latest_snapshot: CompanySnapshot | null
   created_at: string
   updated_at: string
 }
@@ -191,4 +212,8 @@ export interface CreateWorkspaceInput {
 
 export interface WorkspaceListResponse {
   items: WorkspaceListItem[]
+}
+
+export interface SnapshotListResponse {
+  items: CompanySnapshot[]
 }

@@ -14,8 +14,11 @@ import time
 from app.db.repositories.analyses import update_analysis_status
 from app.db.repositories.memos import create_memo
 from app.db.repositories.workspaces import (
+    create_company_snapshot,
     get_workspace_internal,
+    list_confirmed_companies,
     replace_discovered_companies,
+    set_companies_monitoring_status,
     update_workspace_status,
 )
 from app.logging_config import configure_logging
@@ -23,6 +26,7 @@ from app.pipeline.context import CompanyInput
 from app.pipeline.discovery import run_discovery
 from app.pipeline.guards import write_cache
 from app.pipeline.runner import run_pipeline
+from app.pipeline.snapshot import capture_website_snapshot
 from app.queue.client import PIPELINE_QUEUE, get_redis
 
 # Maximum times a job can be retried before being dropped
@@ -159,6 +163,66 @@ async def process_workspace_discovery(job: dict) -> None:
         await update_workspace_status(workspace_id, "failed", error=str(exc))
 
 
+async def process_workspace_snapshot(job: dict) -> None:
+    workspace_id = job["workspace_id"]
+    logger.info(f"[Worker] Capturing baseline for workspace {workspace_id}")
+
+    try:
+        companies = await list_confirmed_companies(workspace_id)
+        semaphore = asyncio.Semaphore(4)
+
+        async def capture_company(company: dict) -> None:
+            company_id = company["id"]
+            website_url = company.get("website_url")
+            if not website_url:
+                await set_companies_monitoring_status(
+                    workspace_id,
+                    "failed",
+                    company_id=company_id,
+                    error="No website URL is available for this company.",
+                )
+                return
+
+            async with semaphore:
+                await set_companies_monitoring_status(
+                    workspace_id,
+                    "running",
+                    company_id=company_id,
+                )
+                try:
+                    snapshot = await capture_website_snapshot(website_url)
+                    await create_company_snapshot(
+                        workspace_id,
+                        company_id,
+                        snapshot.to_record(),
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        f"[Worker] Snapshot failed for company {company_id}: {exc}"
+                    )
+                    await set_companies_monitoring_status(
+                        workspace_id,
+                        "failed",
+                        company_id=company_id,
+                        error=str(exc),
+                    )
+
+        await asyncio.gather(*(capture_company(company) for company in companies))
+
+        logger.info(
+            f"[Worker] Baseline capture complete for workspace {workspace_id}"
+        )
+    except Exception as exc:
+        logger.exception(
+            f"[Worker] Workspace baseline failed for {workspace_id}: {exc}"
+        )
+        await set_companies_monitoring_status(
+            workspace_id,
+            "failed",
+            error=str(exc),
+        )
+
+
 async def dispatch_job(job: dict) -> None:
     job_type = job.get("job_type", "analysis")
     if job_type == "analysis":
@@ -166,6 +230,9 @@ async def dispatch_job(job: dict) -> None:
         return
     if job_type == "workspace_discovery":
         await process_workspace_discovery(job)
+        return
+    if job_type == "workspace_snapshot":
+        await process_workspace_snapshot(job)
         return
     logger.error(f"[Worker] Unknown job type: {job_type}")
 

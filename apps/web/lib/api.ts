@@ -5,6 +5,7 @@ import type {
   CreateWorkspaceInput,
   Memo,
   PaginatedAnalyses,
+  SnapshotListResponse,
   Workspace,
   WorkspaceListResponse,
 } from '@atlasos/types'
@@ -61,6 +62,21 @@ export const api = {
         method: 'PUT',
         body: JSON.stringify({ company_ids: companyIds }),
       }),
+
+    captureSnapshots: (id: string) =>
+      apiFetch<{ id: string; status: 'pending' }>(
+        `/v1/workspaces/${id}/snapshots`,
+        { method: 'POST' },
+      ),
+
+    listSnapshots: (id: string, companyId?: string) => {
+      const query = companyId
+        ? `?company_id=${encodeURIComponent(companyId)}`
+        : ''
+      return apiFetch<SnapshotListResponse>(
+        `/v1/workspaces/${id}/snapshots${query}`,
+      )
+    },
 
     delete: (id: string) =>
       apiFetch<void>(`/v1/workspaces/${id}`, { method: 'DELETE' }),
