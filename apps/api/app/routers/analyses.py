@@ -13,14 +13,17 @@ from app.db.repositories.analyses import (
     list_analyses,
     update_analysis_status,
 )
-from app.db.repositories.memos import get_memo_by_analysis, create_memo
+from app.db.repositories.memos import (
+    create_memo,
+    get_memo_by_analysis,
+    increment_export_count,
+)
 from app.middleware.auth import require_auth
 from app.middleware.rate_limit import limiter
 from app.pipeline.guards import (
     PipelineGuardError,
     check_cache,
     check_concurrent_limit,
-    write_cache,
 )
 from app.queue.client import enqueue_analysis
 from app.schemas import CreateAnalysisRequest, ExportMemoRequest
@@ -200,6 +203,7 @@ async def export_memo(
         raise HTTPException(status_code=404, detail={"code": "MEMO_NOT_FOUND", "message": "Memo not found."})
 
     if body.format == "markdown":
+        await increment_export_count(memo["id"])
         return {
             "export_id": memo["id"],
             "format": "markdown",
@@ -209,6 +213,7 @@ async def export_memo(
     # PDF generation
     from app.services.export import generate_pdf
     pdf_bytes = await generate_pdf(memo["content_md"])
+    await increment_export_count(memo["id"])
 
     return StreamingResponse(
         iter([pdf_bytes]),

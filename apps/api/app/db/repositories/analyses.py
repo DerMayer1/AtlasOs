@@ -44,7 +44,14 @@ async def list_analyses(
     if status:
         query = query.eq("status", status)
     res = await query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
-    return res.data, res.count or 0
+    items = [
+        {
+            **record,
+            "company_name": record.get("input", {}).get("company_name", ""),
+        }
+        for record in res.data
+    ]
+    return items, res.count or 0
 
 
 async def update_analysis_status(
