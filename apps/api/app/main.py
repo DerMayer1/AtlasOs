@@ -10,7 +10,7 @@ from app.logging_config import configure_logging
 from app.middleware.correlation import CorrelationIDMiddleware
 from app.middleware.rate_limit import limiter
 from app.middleware.security_headers import SecurityHeadersMiddleware
-from app.routers import analyses, auth, health
+from app.routers import analyses, auth, health, workspaces
 from app.startup import run_startup_checks
 
 configure_logging()
@@ -85,3 +85,4 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 app.include_router(health.router)
 app.include_router(auth.router, prefix="/v1/auth")
 app.include_router(analyses.router, prefix="/v1/analyses")
+app.include_router(workspaces.router, prefix="/v1/workspaces")
