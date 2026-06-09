@@ -59,8 +59,7 @@ class CompetitorClassifierStage(PipelineStage):
 
     async def execute(self, ctx: PipelineContext) -> None:
         if not ctx.search_results:
-            logger.warning("[Stage 4] No search results to classify")
-            return
+            raise ValueError("No competitor search results were found")
 
         search_text = "\n".join(
             f"- {r['title']} | {r['url']}\n  {r['content']}"
@@ -101,4 +100,11 @@ Also include these known competitors if not already in the list: {ctx.input.know
                 for c in result.competitors
             ]
             ctx.competitors = validate_competitors(raw)
-            logger.info(f"[Stage 4] Classified {len(ctx.competitors)} competitors (after dedup/validation)")
+            if not ctx.competitors:
+                raise ValueError("No valid competitors were identified")
+            logger.info(
+                f"[Stage 4] Classified {len(ctx.competitors)} competitors "
+                "(after dedup/validation)"
+            )
+        else:
+            raise ValueError("LLM returned empty competitor output")

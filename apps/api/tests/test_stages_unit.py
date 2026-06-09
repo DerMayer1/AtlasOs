@@ -2,8 +2,10 @@
 Unit tests for pipeline stages 1-4.
 All LLM and external calls are mocked.
 """
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from app.pipeline.context import CompanyInput, PipelineContext
 
 
@@ -65,6 +67,7 @@ class TestWebsiteExtractor:
     @pytest.mark.asyncio
     async def test_graceful_failure_on_http_error(self):
         import httpx
+
         from app.pipeline.stages.stage1_extractor import WebsiteExtractorStage
 
         with patch("httpx.AsyncClient") as mock_client_cls:
@@ -72,7 +75,11 @@ class TestWebsiteExtractor:
             mock_response = MagicMock()
             mock_response.status_code = 403
             mock_client.get = AsyncMock(
-                side_effect=httpx.HTTPStatusError("403", request=MagicMock(), response=mock_response)
+                side_effect=httpx.HTTPStatusError(
+                    "403",
+                    request=MagicMock(),
+                    response=mock_response,
+                )
             )
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
             mock_client.__aexit__ = AsyncMock(return_value=False)
@@ -116,14 +123,14 @@ class TestCategoryClassifier:
 
 class TestCompetitorClassifier:
     @pytest.mark.asyncio
-    async def test_skips_when_no_search_results(self):
+    async def test_fails_when_no_search_results(self):
         from app.pipeline.stages.stage4_competitor_classifier import CompetitorClassifierStage
 
         ctx = make_ctx()
         ctx.search_results = []
         stage = CompetitorClassifierStage()
-        await stage.execute(ctx)
-        assert ctx.competitors == []
+        with pytest.raises(ValueError, match="No competitor search results"):
+            await stage.execute(ctx)
 
     @pytest.mark.asyncio
     async def test_classifies_competitors(self):
@@ -149,7 +156,13 @@ class TestCompetitorClassifier:
             mock_client.beta.chat.completions.parse = AsyncMock(return_value=mock_response)
             ctx = make_ctx()
             ctx.category = Category(label="Project tracking", definition="Tools for PM.")
-            ctx.search_results = [{"title": "Jira", "url": "https://jira.com", "content": "Project management"}]
+            ctx.search_results = [
+                {
+                    "title": "Jira",
+                    "url": "https://jira.com",
+                    "content": "Project management",
+                }
+            ]
             stage = CompetitorClassifierStage()
             await stage.execute(ctx)
 
