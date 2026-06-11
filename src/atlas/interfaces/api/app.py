@@ -56,6 +56,9 @@ class AnalysisIn(BaseModel):
 
 class AgentAskIn(BaseModel):
     question: str
+    portfolio_id: str | None = None
+    snapshot_id: str | None = None
+    params: dict[str, Any] = Field(default_factory=dict)
 
 
 def _router():
@@ -158,16 +161,68 @@ def _router():
 
     @router.post("/agent/ask", dependencies=[require_scope(SCOPE_RUN)])
     def agent_ask(body: AgentAskIn, request: Request):
-        # The orchestrator/narrator agent lands in Phase 3. Per the PRD edge
-        # cases, the honest answer until then: state what exists, never invent.
         c = _container(request)
+        params = dict(body.params)
+        portfolio_context = ""
+
+        with c.session_factory() as session:
+            if body.portfolio_id:
+                portfolio = session.get(PortfolioRow, body.portfolio_id)
+                if portfolio is None:
+                    raise HTTPException(404, "portfolio not found")
+                params.setdefault("companies", portfolio.companies)
+                names = [co.get("name", "?") for co in portfolio.companies]
+                portfolio_context = f"{portfolio.name}: {', '.join(names)}"
+
+            snapshot_id = body.snapshot_id
+            if snapshot_id is None:
+                latest = session.execute(
+                    select(SnapshotRow).order_by(SnapshotRow.created_at.desc()).limit(1)
+                ).scalar_one_or_none()
+                if latest is None:
+                    raise HTTPException(
+                        409, "no snapshot available; analyses never run on live data"
+                    )
+                snapshot_id = latest.snapshot_id
+            else:
+                try:
+                    c.snapshots.manifest(snapshot_id)
+                except SnapshotNotFoundError:
+                    raise HTTPException(404, f"snapshot {snapshot_id!r} not found") from None
+
+        answer = c.agent.ask(
+            question=body.question,
+            snapshot_id=snapshot_id,
+            params=params,
+            portfolio_id=body.portfolio_id,
+            portfolio_context=portfolio_context,
+        )
+        return answer.model_dump(mode="json")
+
+    @router.get("/agent/traces/{trace_id}", dependencies=[require_scope(SCOPE_READ)])
+    def get_trace(trace_id: str, request: Request):
+        c = _container(request)
+        row = c.agent.trace_store.get(trace_id)
+        if row is None:
+            raise HTTPException(404, "trace not found")
         return {
-            "answer": None,
-            "message": (
-                "The orchestrating agent is not available yet (Phase 3). "
-                "Available engines can be invoked directly via POST /analyses."
-            ),
-            "capabilities": c.registry.capabilities(),
+            "trace_id": row.id,
+            "question": row.question,
+            "plan": row.plan,
+            "executed": row.executed,
+            "run_ids": row.run_ids,
+            "narrative": row.narrative,
+            "citations": row.citations,
+            "citations_valid": row.citations_valid,
+            "degraded": row.degraded,
+            "degraded_reason": row.degraded_reason,
+            "prompt_version": row.prompt_version,
+            "llm_model": row.llm_model,
+            "input_tokens": row.input_tokens,
+            "output_tokens": row.output_tokens,
+            "cost_usd": row.cost_usd,
+            "latency_ms": row.latency_ms,
+            "created_at": row.created_at,
         }
 
     @router.get(

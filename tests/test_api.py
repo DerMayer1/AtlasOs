@@ -130,15 +130,40 @@ def test_failed_analysis_persists_error(client_and_keys):
     assert body["attempts"] == 1
 
 
-def test_agent_ask_is_honest_about_capabilities(client_and_keys):
+def test_agent_ask_refuses_out_of_scope(client_and_keys):
+    # No ANTHROPIC key in tests -> deterministic planner; FX is out of scope.
     client, run_token, _, _ = client_and_keys
     resp = client.post(
-        "/agent/ask", json={"question": "what is the FX risk?"}, headers={"X-API-Key": run_token}
+        "/agent/ask",
+        json={"question": "what is your EUR/USD forecast?"},
+        headers={"X-API-Key": run_token},
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert body["answer"] is None
+    assert body["plan"]["refusal_reason"] is not None
+    assert body["executed"] == []
     assert "impairment" in body["capabilities"]
+
+
+def test_agent_ask_runs_engine_and_persists_trace(client_and_keys):
+    client, run_token, _, _ = client_and_keys
+    pf = client.post("/portfolios", json=PORTFOLIO, headers={"X-API-Key": run_token}).json()
+    resp = client.post(
+        "/agent/ask",
+        json={"question": "what is the impairment risk?", "portfolio_id": pf["portfolio_id"]},
+        headers={"X-API-Key": run_token},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["executed"][0]["status"] == "succeeded"
+    # no LLM in tests -> degraded numbers-only, but still a valid cited narrative
+    assert body["degraded"] is True
+    assert body["citations"]["orphan_claims"] == []
+    assert body["narrative"]
+
+    trace = client.get(f"/agent/traces/{body['trace_id']}", headers={"X-API-Key": run_token})
+    assert trace.status_code == 200
+    assert trace.json()["citations_valid"] is True
 
 
 def test_health_unauthenticated(client_and_keys):

@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     # Dev convenience: create tables directly for SQLite. Postgres uses Alembic.
     auto_create_schema: bool = True
     job_max_tries: int = 3
+    # Agent LLM. Empty key -> NullLLMClient -> graceful degradation (deterministic
+    # planning + numbers-only narration). Set ATLAS_ANTHROPIC_API_KEY for full mode.
+    anthropic_api_key: str = ""
+    llm_model: str = "claude-haiku-4-5-20251001"
 
 
 def get_settings() -> Settings:

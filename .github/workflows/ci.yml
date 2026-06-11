@@ -20,3 +20,5 @@ jobs:
         run: ruff check .
       - name: Tests (includes import-direction lint and property tests)
         run: pytest --cov=atlas --cov-report=term-missing
+      - name: Agent eval suite (PRD R8 — regression blocks merge)
+        run: python -m atlas.agent.evals.runner

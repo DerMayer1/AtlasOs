@@ -41,6 +41,7 @@ def test_run_produces_provenance_and_artifacts(macro_snapshot, snapshot_store, a
     assert {a.name for a in result.artifacts} == {
         "impairment_scores.csv",
         "regime_probabilities.csv",
+        "metrics.json",
     }
     scores = pd.read_csv(artifact_store.open_path("run_1/impairment_scores.csv"))
     assert list(scores["company"]) == ["Alpha", "Beta"]

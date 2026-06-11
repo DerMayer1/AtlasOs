@@ -14,6 +14,7 @@ sampling; same snapshot + same params => bit-identical artifacts.
 from __future__ import annotations
 
 import io
+import json
 import uuid
 from typing import Any, Literal
 
@@ -59,7 +60,7 @@ class ImpairmentParams(BaseModel):
 
 class ImpairmentEngine:
     name = "impairment"
-    engine_version = "0.2.0"
+    engine_version = "0.3.0"
     model_version = "hmm3-mc-0.2"
 
     def describe(self) -> str:
@@ -103,12 +104,26 @@ class ImpairmentEngine:
             )
         scores = pd.DataFrame(rows)
 
+        metrics = {
+            "portfolio_mean_p_impairment": float(scores["p_impairment"].mean()),
+            "portfolio_max_p_impairment": float(scores["p_impairment"].max()),
+            "n_companies": float(len(scores)),
+            **{f"p_regime_{r}": float(regime_probs[r]) for r in REGIMES},
+        }
+
+        # metrics.json makes portfolio-level figures addressable so the agent
+        # narrator can cite them (PRD R7: every claim cites an artifact).
         artifacts = [
             ctx.artifacts.publish(ctx.run_id, "impairment_scores.csv", _to_csv(scores)),
             ctx.artifacts.publish(
                 ctx.run_id,
                 "regime_probabilities.csv",
                 _to_csv(regime_probs.rename_axis("regime").reset_index()),
+            ),
+            ctx.artifacts.publish(
+                ctx.run_id,
+                "metrics.json",
+                json.dumps(metrics, indent=2, sort_keys=True).encode(),
             ),
         ]
 
@@ -123,11 +138,7 @@ class ImpairmentEngine:
             status=AnalysisStatus.SUCCEEDED,
             started_at=started,
             finished_at=utcnow(),
-            metrics={
-                "portfolio_mean_p_impairment": float(scores["p_impairment"].mean()),
-                "portfolio_max_p_impairment": float(scores["p_impairment"].max()),
-                **{f"p_regime_{r}": float(regime_probs[r]) for r in REGIMES},
-            },
+            metrics=metrics,
             artifacts=artifacts,
         )
 

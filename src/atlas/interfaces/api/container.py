@@ -8,6 +8,9 @@ from dataclasses import dataclass
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from atlas.agent.llm import AnthropicLLMClient, LLMClient, NullLLMClient
+from atlas.agent.service import AgentService
+from atlas.agent.trace_store import TraceStore
 from atlas.domain.engines import build_registry
 from atlas.platform.audit.artifacts import ArtifactStore
 from atlas.platform.audit.snapshots import SnapshotStore
@@ -28,6 +31,7 @@ class Container:
     snapshots: SnapshotStore
     artifacts: ArtifactStore
     queue: JobQueue
+    agent: AgentService
 
 
 def build_container(settings: Settings) -> Container:
@@ -50,6 +54,20 @@ def build_container(settings: Settings) -> Container:
             )
         )
 
+    llm: LLMClient = (
+        AnthropicLLMClient(settings.anthropic_api_key, settings.llm_model)
+        if settings.anthropic_api_key
+        else NullLLMClient()
+    )
+    agent = AgentService(
+        registry=registry,
+        snapshots=snapshots,
+        artifacts=artifacts,
+        session_factory=session_factory,
+        trace_store=TraceStore(session_factory),
+        llm=llm,
+    )
+
     return Container(
         settings=settings,
         engine=engine,
@@ -58,4 +76,5 @@ def build_container(settings: Settings) -> Container:
         snapshots=snapshots,
         artifacts=artifacts,
         queue=queue,
+        agent=agent,
     )

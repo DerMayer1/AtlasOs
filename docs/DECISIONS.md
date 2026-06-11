@@ -89,6 +89,56 @@ calibration (spread *change* as a feature, daily-frequency detection) is
 legitimate future work in the parking lot, not a blocker for shipping the
 phase.
 
+## ADR-010 — Citation syntax (resolves PRD Q1)
+
+A citation is ``[<artifact_id>:<locator>]`` where ``artifact_id`` is
+``<run_id>/<filename>`` (globally addressable, matches the ArtifactStore) and
+the locator addresses one value: ``<column>@<row_key>`` for CSV (e.g.
+``p_impairment@Beta Logistics``) and a dot-path key for JSON (e.g.
+``portfolio_mean_p_impairment``). Cell-level granularity, not just line — this
+is what lets the Phase 4 frontend open the exact figure behind a claim. Q1 is
+hereby closed: cell/key locators, not whole lines.
+
+## ADR-011 — LLM behind an interface; graceful degradation is the default path
+
+The agent talks to an ``LLMClient`` protocol with three implementations:
+``AnthropicLLMClient`` (production), ``ScriptedLLMClient`` (deterministic,
+drives tests + evals with zero cost), and ``NullLLMClient`` (no key). With no
+key the orchestrator falls back to a deterministic keyword planner and the
+narrator to a fully-cited template — so the system is completely functional and
+honest offline, and this *is* the PRD's graceful-degradation requirement (LLM
+down → numbers-only, pipeline never blocks). Set ``ATLAS_ANTHROPIC_API_KEY``
+for LLM planning + prose. The LLM only ever sees the capability catalog and a
+CITABLE VALUES list — never raw snapshot data (PRD §7.1 principle 2).
+
+## ADR-012 — Citation validation: number-must-cite, with one retry then degrade
+
+The validator flags any decimal/percentage figure not immediately backed by a
+resolving citation (orphan), any citation that doesn't resolve (broken), and
+any cited figure whose value doesn't match the artifact (mismatch). Integers
+(years like 2008) are deliberately not treated as claims to keep false
+positives near zero; this limitation is documented. On failure the narrative is
+regenerated once; if it still fails, the report ships the deterministic
+numbers-only template (PRD R7 acceptance, verbatim).
+
+## ADR-013 — Eval suite uses a scripted LLM and gates CI
+
+The ≥15-case eval suite (``agent/evals``) scripts the LLM so it is
+deterministic, free, and network-free — it tests the real orchestrator,
+narrator, validator and prompts end-to-end (a regression flips a structured
+assertion). ``PROMPT_VERSION`` is asserted and recorded in every trace, so
+editing a prompt is a versioned, eval-gated change. CI runs the suite as a
+hard gate (``python -m atlas.agent.evals.runner`` exits non-zero on
+regression). A ``live=True`` path against the real model is available for
+manual runs but kept out of CI to avoid cost/flakiness (PRD R8 + risk table).
+
+## ADR-014 — /agent/ask is synchronous in v1
+
+Unlike /analyses (queued), /agent/ask runs the full orchestration inline and
+returns the answer. The heavy work (engine Monte Carlo) is already fast and the
+LLM calls are short; an async orchestration job is a clean future enhancement
+but would double the surface for no v1 benefit.
+
 ## Parking lot
 
 - Citation locator granularity (PRD Q1) — decide in Phase 3.

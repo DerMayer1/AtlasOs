@@ -1,6 +1,16 @@
-# Known limitations (Phase 2)
+# Known limitations (Phase 3)
 
 Honesty is a feature. What this system does **not** yet do:
+
+0. **The orphan-claim detector treats only decimals and percentages as claims.**
+   A bare integer asserted by the narrator (e.g. "12 companies") would not be
+   flagged as an orphan. Engine outputs are probabilities/percentages/decimals,
+   so this is safe in practice, but it is a real edge of the validator. Years
+   (2008, 2020) are excluded on purpose for the same reason.
+0b. **Eval suite scripts the LLM.** CI runs the agent logic against a scripted
+   model, not the live API, so it catches regressions in orchestration,
+   narration, citation validation and prompt wiring — but not changes in the
+   real model's behaviour. A live eval run needs a key and is manual.
 
 1. **The HMM is outperformed by naive rules on crisis precision.** The
    validation report (`validation_report.md`) shows VIX>30 and a wide-spread

@@ -21,14 +21,17 @@ src/atlas/
 │   ├── engines/
 │   │   └── impairment/  # Engine 1: Monte Carlo + HMM regime model
 │   └── validation/      # reference labels + metrics for the validation report
+├── agent/               # orchestrator (question→plan), narrator (results→thesis),
+│   │                    # citation validator, trace store, evals/
+│   └── evals/           # ≥15 scripted-LLM cases; CI gate
 └── interfaces/
     ├── api/             # FastAPI app, API-key auth (read/run scopes)
     ├── worker.py        # ARQ worker (3 retries, exponential backoff)
     └── cli.py           # init-db, seed, ingest
 scripts/                 # validation_report.py (make validation-report)
-docs/                    # DECISIONS.md (ADRs), limitations.md, validation_report.md
+docs/                    # DECISIONS.md (ADRs), limitations.md, validation_report.md, agent_evals.md
 migrations/              # Alembic
-tests/                   # unit, property-based, API e2e, import-direction lint
+tests/                   # unit, property-based, API e2e, agent, citations, evals
 ```
 
 Non-negotiable principles (PRD §7.1):
@@ -67,8 +70,8 @@ docker compose run --rm api python -m atlas.interfaces.cli seed
 
 API at http://localhost:8000 (OpenAPI docs at `/docs`). Endpoints: `POST /portfolios`,
 `POST /analyses` (returns `job_id`), `GET /analyses/{id}`, `POST /agent/ask`,
-`GET /artifacts/{run_id}/{name}`, `GET /health`. Auth via `X-API-Key` with
-`read`/`run` scopes.
+`GET /agent/traces/{id}`, `GET /artifacts/{run_id}/{name}`, `GET /health`. Auth
+via `X-API-Key` with `read`/`run` scopes.
 
 ## Real macro data + validation (Phase 2)
 
@@ -86,6 +89,32 @@ itself ([docs/validation_report.md](docs/validation_report.md)) is regenerated
 from a frozen snapshot — same snapshot, same numbers — and publishes the model's
 results honestly, including where naive benchmarks beat it.
 
+## The agent: every claim cites its number (Phase 3)
+
+`POST /agent/ask` turns an institutional question into a typed plan of engine
+calls (orchestrator), runs the real deterministic engines, and narrates the
+structured results into a thesis where **every figure is followed by a
+`[artifact_id:locator]` citation** — validated against the artifacts before the
+answer is returned. An uncited or wrong number gets the narrative regenerated
+once, then degraded to a numbers-only summary. Out-of-scope questions are
+refused honestly with the real capability list. The whole decision (plan, tool
+calls, tokens, cost, latency, prompt version) is persisted as a queryable trace
+(`GET /agent/traces/{id}`).
+
+```powershell
+$h = @{ "X-API-Key" = "<api_key>" }
+Invoke-RestMethod -Method Post http://127.0.0.1:8000/agent/ask -Headers $h `
+  -ContentType application/json `
+  -Body '{"question":"What is the impairment risk in a 2022-style scenario?","portfolio_id":"<pf_id>"}'
+```
+
+The LLM is optional: with no `ATLAS_ANTHROPIC_API_KEY` the orchestrator uses a
+deterministic planner and the narrator a fully-cited template (the PRD's
+graceful-degradation path). The LLM never sees raw data — only the capability
+catalog and a list of citable values. The eval suite
+([docs/agent_evals.md](docs/agent_evals.md)) gates CI: 16 scripted-LLM cases,
+regression fails the build.
+
 ## Roadmap (PRD §9)
 
 | Phase | Content | Done when |
@@ -93,5 +122,5 @@ results honestly, including where naive benchmarks beat it.
 | **0 — Foundation** ✅ | Contracts, schemas, snapshot/artifact stores, registry, Engine 1 behind `AnalysisWorker`, tests, CI | Tests green; import-direction enforced |
 | **1 — Living system** ✅ | FastAPI, Postgres + Alembic, ARQ/Redis queue, docker compose, API keys | `POST /analyses` → result via `GET` |
 | **2 — Credibility** ✅ | FRED ingestion, real snapshots, HMM, validation report (2008/2020/2022) | "Detection lag in 2020?" answerable with a number |
-| 3 — Differentiator | Orchestrator, narrator with mandatory citations, trace store, eval suite in CI | Prompt change → CI catches regression |
+| **3 — Differentiator** ✅ | Orchestrator, narrator with mandatory citations, trace store, eval suite in CI | Prompt change → CI catches regression |
 | 4 — Public proof | React frontend (clickable citations), Engine 2 (macro monitor), scheduler + alerts, deploy | A stranger uses it unaided via the link |

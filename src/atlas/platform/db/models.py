@@ -58,6 +58,35 @@ class SnapshotRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class AgentTraceRow(Base):
+    """Persisted agent decision (PRD R7): plan, calls, narrative, cost — the
+    audit record answering 'why did the system say X on day Y?'.
+
+    Queryable by run, portfolio or period via TraceStore."""
+
+    __tablename__ = "agent_traces"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    org_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    portfolio_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    question: Mapped[str] = mapped_column(Text)
+    plan: Mapped[dict[str, Any]] = mapped_column(JSON)
+    executed: Mapped[list[Any]] = mapped_column(JSON)
+    run_ids: Mapped[list[Any]] = mapped_column(JSON)  # for query-by-run
+    narrative: Mapped[str | None] = mapped_column(Text, nullable=True)
+    citations: Mapped[dict[str, Any]] = mapped_column(JSON)
+    citations_valid: Mapped[bool] = mapped_column(default=False)
+    degraded: Mapped[bool] = mapped_column(default=False)
+    degraded_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    llm_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(default=0.0)
+    latency_ms: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class ApiKeyRow(Base):
     __tablename__ = "api_keys"
 
