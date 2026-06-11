@@ -26,7 +26,7 @@ const nextConfig: NextConfig = {
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com",
               "img-src 'self' data: blob:",
-              "connect-src 'self' https://*.supabase.co http://localhost:8000 https://atlasos.io",
+              "connect-src 'self' https://*.supabase.co http://localhost:8001 https://atlasos.io",
               "frame-ancestors 'none'",
             ].join('; '),
           },

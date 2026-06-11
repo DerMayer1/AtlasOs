@@ -29,11 +29,6 @@ export default function NewWorkspacePage() {
         ...form,
         target_market: form.target_market || undefined,
       })
-      try {
-        await api.workspaces.discover(workspace.id)
-      } catch {
-        // The workspace already exists; its detail page exposes a retry action.
-      }
       router.push(`/dashboard/workspaces/${workspace.id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create market')

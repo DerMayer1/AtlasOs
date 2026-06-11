@@ -1,52 +1,22 @@
-# Dependencies
-node_modules/
-.pnpm-store/
-
-# Environment variables — never commit secrets
-.env
-.env.local
-.env.*.local
-*.secret
-
-# Next.js
-apps/web/.next/
-apps/web/out/
-
 # Python
-**/__pycache__/
-**/*.pyc
-**/*.pyo
-apps/api/.venv/
-apps/api/dist/
-apps/api/.pytest_cache/
-apps/api/.mypy_cache/
-apps/api/.ruff_cache/
-apps/api/*.egg-info/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
-# Build outputs
-dist/
-build/
+# Data (snapshots and artifacts are runtime state, never committed)
+data/
+var/
 
-# Turbo
-.turbo/
+# Legacy project leftovers (pending removal)
+apps/
 
-# OS
+# OS / editors
 .DS_Store
 Thumbs.db
-*.swp
-
-# IDE
-.vscode/settings.json
 .idea/
-*.iml
-
-# Logs
-*.log
-npm-debug.log*
-pnpm-debug.log*
-
-# Certificates / keys
-*.pem
-*.key
-*.crt
-*.p12
+.vscode/

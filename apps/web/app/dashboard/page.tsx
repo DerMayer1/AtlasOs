@@ -4,7 +4,7 @@ import type { WorkspaceListItem } from '@atlasos/types'
 import { createClient } from '@/lib/supabase/server'
 
 async function getWorkspaces(token: string): Promise<WorkspaceListItem[]> {
-  const apiBase = process.env.API_URL ?? 'http://localhost:8000'
+  const apiBase = process.env.API_URL ?? 'http://localhost:8001'
   const response = await fetch(`${apiBase}/v1/workspaces`, {
     headers: { Authorization: `Bearer ${token}` },
     cache: 'no-store',

@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from app.config import settings
 from app.pipeline.base import PipelineStage
+from app.pipeline.competitor_websites import resolve_competitor_websites
 from app.pipeline.context import Competitor, PipelineContext
 from app.pipeline.validator import validate_competitors
 
@@ -54,7 +55,7 @@ class CompetitorListOutput(BaseModel):
 class CompetitorClassifierStage(PipelineStage):
     stage_number = 4
     stage_name = "Competitor Classifier"
-    timeout_s = 12
+    timeout_s = 30
     is_critical = True  # No competitors → no positioning → abort
 
     async def execute(self, ctx: PipelineContext) -> None:
@@ -102,6 +103,7 @@ Also include these known competitors if not already in the list: {ctx.input.know
             ctx.competitors = validate_competitors(raw)
             if not ctx.competitors:
                 raise ValueError("No valid competitors were identified")
+            await resolve_competitor_websites(ctx)
             logger.info(
                 f"[Stage 4] Classified {len(ctx.competitors)} competitors "
                 "(after dedup/validation)"

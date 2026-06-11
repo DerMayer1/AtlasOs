@@ -3,21 +3,34 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import type { Workspace } from '@atlasos/types'
+import type { CompanyChange, Workspace, WorkspaceReport } from '@atlasos/types'
 import { api } from '@/lib/api'
 
 export default function WorkspacePage() {
   const { id } = useParams<{ id: string }>()
   const [workspace, setWorkspace] = useState<Workspace | null>(null)
+  const [changes, setChanges] = useState<CompanyChange[]>([])
+  const [reports, setReports] = useState<WorkspaceReport[]>([])
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [startingDiscovery, setStartingDiscovery] = useState(false)
 
   const load = useCallback(async () => {
     try {
       const data = await api.workspaces.get(id)
       setWorkspace(data)
+      // Changes and reports only exist (and are only rendered) once the
+      // workspace is active, so skip those requests in earlier states.
+      if (data.status === 'active') {
+        const [changeData, reportData] = await Promise.all([
+          api.workspaces.listChanges(id),
+          api.workspaces.listReports(id),
+        ])
+        setChanges(changeData.items)
+        setReports(reportData.items)
+      }
       setSelected(
         new Set(
           data.companies
@@ -33,6 +46,8 @@ export default function WorkspacePage() {
   }, [id])
 
   useEffect(() => {
+    // The state update happens after the asynchronous API requests resolve.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load()
   }, [load])
 
@@ -50,8 +65,7 @@ export default function WorkspacePage() {
     workspace?.companies.some(
       (company) =>
         company.is_confirmed &&
-        (company.monitoring_status === 'pending' ||
-          company.monitoring_status === 'running'),
+        (company.monitoring_status === 'pending' || company.monitoring_status === 'running'),
     ) ?? false
 
   useEffect(() => {
@@ -91,6 +105,7 @@ export default function WorkspacePage() {
   }
 
   async function retryDiscovery() {
+    setStartingDiscovery(true)
     setError('')
     try {
       await api.workspaces.discover(id)
@@ -99,6 +114,8 @@ export default function WorkspacePage() {
       )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not start discovery')
+    } finally {
+      setStartingDiscovery(false)
     }
   }
 
@@ -156,9 +173,7 @@ export default function WorkspacePage() {
           {workspace.category_label && (
             <div className="mt-6 border-l border-zinc-700 pl-4">
               <p className="text-sm font-medium">{workspace.category_label}</p>
-              <p className="text-sm text-zinc-500 mt-1">
-                {workspace.category_definition}
-              </p>
+              <p className="text-sm text-zinc-500 mt-1">{workspace.category_definition}</p>
             </div>
           )}
         </header>
@@ -216,9 +231,7 @@ export default function WorkspacePage() {
                       </div>
                       <p className="text-sm text-zinc-400 mt-2">{company.summary}</p>
                       {company.website_url && (
-                        <p className="text-xs text-zinc-600 mt-2">
-                          {company.website_url}
-                        </p>
+                        <p className="text-xs text-zinc-600 mt-2">{company.website_url}</p>
                       )}
                     </div>
                   </div>
@@ -247,25 +260,271 @@ export default function WorkspacePage() {
         )}
 
         {workspace.status === 'active' && (
-          <MonitoringBaseline
-            companies={workspace.companies.filter(
-              (company) => company.is_subject || company.is_confirmed,
-            )}
-            refreshing={refreshing || monitoringInProgress}
-            onRefresh={captureSnapshots}
-          />
+          <>
+            <MonitoringBaseline
+              companies={workspace.companies.filter(
+                (company) => company.is_subject || company.is_confirmed,
+              )}
+              refreshing={refreshing || monitoringInProgress}
+              onRefresh={captureSnapshots}
+            />
+            <ChangeTimeline changes={changes} companies={workspace.companies} />
+            <ReportList workspaceId={id} reports={reports} />
+          </>
         )}
 
         {workspace.status === 'draft' && (
-          <button
-            onClick={retryDiscovery}
-            className="bg-white text-black text-sm font-medium px-5 py-2.5 rounded-md"
-          >
-            Discover competitors
-          </button>
+          <div>
+            <p className="text-sm text-zinc-500 mb-4">Discovery has not started yet.</p>
+            {error ? <p className="text-sm text-red-400 mb-4">{error}</p> : null}
+            <button
+              onClick={retryDiscovery}
+              disabled={startingDiscovery}
+              className="bg-white text-black text-sm font-medium px-5 py-2.5 rounded-md disabled:opacity-40"
+            >
+              {startingDiscovery ? 'Starting…' : 'Discover competitors'}
+            </button>
+          </div>
         )}
       </div>
     </div>
+  )
+}
+
+function ChangeTimeline({
+  changes,
+  companies,
+}: {
+  changes: CompanyChange[]
+  companies: Workspace['companies']
+}) {
+  const [relevance, setRelevance] = useState('all')
+  const [category, setCategory] = useState('all')
+  const [companyId, setCompanyId] = useState('all')
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const companiesById = new Map(companies.map((company) => [company.id, company]))
+  const categories = [...new Set(changes.map((change) => change.category))]
+  const changedCompanyIds = new Set(changes.map((change) => change.company_id))
+  const changedCompanies = companies.filter((company) => changedCompanyIds.has(company.id))
+  const filteredChanges = changes.filter(
+    (change) =>
+      (relevance === 'all' || change.relevance === relevance) &&
+      (category === 'all' || change.category === category) &&
+      (companyId === 'all' || change.company_id === companyId),
+  )
+
+  function toggleEvidence(changeId: string) {
+    setExpanded((current) => {
+      const next = new Set(current)
+      if (next.has(changeId)) next.delete(changeId)
+      else next.add(changeId)
+      return next
+    })
+  }
+
+  return (
+    <section className="mt-14 pt-10 border-t border-zinc-800">
+      <p className="text-xs uppercase tracking-widest text-zinc-500 mb-2">Change timeline</p>
+      <h2 className="text-xl font-semibold">Meaningful market changes</h2>
+      <p className="text-sm text-zinc-500 mt-1 mb-5">
+        Routine page noise is filtered before a change reaches this timeline.
+      </p>
+
+      {changes.length === 0 ? (
+        <div className="border border-zinc-800 rounded-lg p-6 text-sm text-zinc-500">
+          No meaningful changes detected after the baseline yet.
+        </div>
+      ) : (
+        <>
+          <div className="grid sm:grid-cols-3 gap-3 mb-5">
+            <TimelineFilter
+              label="Relevance"
+              value={relevance}
+              onChange={setRelevance}
+              options={[
+                ['all', 'All priorities'],
+                ['high', 'High'],
+                ['medium', 'Medium'],
+                ['low', 'Low'],
+              ]}
+            />
+            <TimelineFilter
+              label="Category"
+              value={category}
+              onChange={setCategory}
+              options={[
+                ['all', 'All categories'],
+                ...categories.map((value) => [value, capitalize(value)]),
+              ]}
+            />
+            <TimelineFilter
+              label="Company"
+              value={companyId}
+              onChange={setCompanyId}
+              options={[
+                ['all', 'All companies'],
+                ...changedCompanies.map((company) => [company.id, company.name]),
+              ]}
+            />
+          </div>
+
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs text-zinc-500 tabular-nums">
+              Showing {filteredChanges.length} of {changes.length} changes
+            </p>
+            {filteredChanges.length !== changes.length ? (
+              <button
+                onClick={() => {
+                  setRelevance('all')
+                  setCategory('all')
+                  setCompanyId('all')
+                }}
+                className="text-xs text-zinc-400 hover:text-white transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500"
+              >
+                Clear filters
+              </button>
+            ) : null}
+          </div>
+
+          {filteredChanges.length === 0 ? (
+            <div className="border border-zinc-800 rounded-lg p-6 text-sm text-zinc-500">
+              No changes match these filters.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredChanges.map((change) => (
+                <article
+                  key={change.id}
+                  className="border border-zinc-800 bg-zinc-950 rounded-lg p-5 transition hover:border-zinc-700"
+                >
+                  <div className="flex items-start justify-between gap-5">
+                    <div>
+                      <p className="font-medium">
+                        {companiesById.get(change.company_id)?.name ?? 'Company'}
+                      </p>
+                      <p className="text-sm text-zinc-300 mt-2">{change.summary}</p>
+                    </div>
+                    <span
+                      className={`text-xs capitalize whitespace-nowrap ${
+                        change.relevance === 'high'
+                          ? 'text-red-300'
+                          : change.relevance === 'medium'
+                            ? 'text-amber-300'
+                            : 'text-zinc-500'
+                      }`}
+                    >
+                      {change.category} · {change.relevance}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4 mt-4">
+                    <p className="text-xs text-zinc-600">{formatCapturedAt(change.created_at)}</p>
+                    <button
+                      onClick={() => toggleEvidence(change.id)}
+                      className="text-xs text-zinc-400 hover:text-white transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500"
+                      aria-expanded={expanded.has(change.id)}
+                    >
+                      {expanded.has(change.id) ? 'Hide evidence' : 'View evidence'}
+                    </button>
+                  </div>
+                  {expanded.has(change.id) ? <Evidence evidence={change.evidence} /> : null}
+                </article>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  )
+}
+
+function TimelineFilter({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  options: string[][]
+}) {
+  return (
+    <label className="text-xs text-zinc-500">
+      <span className="block mb-2">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full bg-zinc-950 border border-zinc-800 rounded-md px-3 py-2.5 text-sm text-zinc-200 focus:outline-none focus:border-zinc-500"
+      >
+        {options.map(([optionValue, optionLabel]) => (
+          <option key={optionValue} value={optionValue}>
+            {optionLabel}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
+function Evidence({ evidence }: { evidence: CompanyChange['evidence'] }) {
+  return (
+    <div className="grid md:grid-cols-2 gap-4 mt-5 pt-5 border-t border-zinc-800">
+      <EvidenceColumn title="Added" items={evidence.added ?? []} />
+      <EvidenceColumn title="Removed" items={evidence.removed ?? []} />
+    </div>
+  )
+}
+
+function EvidenceColumn({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div>
+      <p className="text-[11px] uppercase tracking-widest text-zinc-600 mb-2">{title}</p>
+      {items.length ? (
+        <ul className="space-y-2">
+          {items.map((item, index) => (
+            <li key={`${item}-${index}`} className="text-xs leading-relaxed text-zinc-400">
+              {item}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-xs text-zinc-600">No excerpt available.</p>
+      )}
+    </div>
+  )
+}
+
+function ReportList({ workspaceId, reports }: { workspaceId: string; reports: WorkspaceReport[] }) {
+  return (
+    <section className="mt-14 pt-10 border-t border-zinc-800">
+      <p className="text-xs uppercase tracking-widest text-zinc-500 mb-2">Reports</p>
+      <h2 className="text-xl font-semibold">Monitoring reports</h2>
+      <p className="text-sm text-zinc-500 mt-1 mb-5">
+        Baselines and meaningful change summaries are available for export.
+      </p>
+
+      {reports.length === 0 ? (
+        <div className="border border-zinc-800 rounded-lg p-6 text-sm text-zinc-500">
+          The first report is created when baseline capture completes.
+        </div>
+      ) : (
+        <div className="grid gap-3">
+          {reports.map((report) => (
+            <Link
+              key={report.id}
+              href={`/dashboard/workspaces/${workspaceId}/reports/${report.id}`}
+              className="border border-zinc-800 rounded-lg p-4 flex items-center justify-between gap-6 hover:border-zinc-600 transition"
+            >
+              <div>
+                <p className="text-sm font-medium">{report.title}</p>
+                <p className="text-xs text-zinc-500 mt-1">{formatCapturedAt(report.created_at)}</p>
+              </div>
+              <span className="text-xs text-zinc-500 capitalize">{report.report_type}</span>
+            </Link>
+          ))}
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -278,9 +537,7 @@ function MonitoringBaseline({
   refreshing: boolean
   onRefresh: () => void
 }) {
-  const ready = companies.filter(
-    (company) => company.monitoring_status === 'ready',
-  ).length
+  const ready = companies.filter((company) => company.monitoring_status === 'ready').length
 
   return (
     <section className="mt-14 pt-10 border-t border-zinc-800">
@@ -328,14 +585,10 @@ function MonitoringBaseline({
                     : ''}
                 </p>
               ) : (
-                <p className="text-xs text-zinc-600 mt-1">
-                  No baseline captured yet.
-                </p>
+                <p className="text-xs text-zinc-600 mt-1">No baseline captured yet.</p>
               )}
               {company.snapshot_error ? (
-                <p className="text-xs text-red-400 mt-2">
-                  {company.snapshot_error}
-                </p>
+                <p className="text-xs text-red-400 mt-2">{company.snapshot_error}</p>
               ) : null}
             </div>
             <MonitoringStatus status={company.monitoring_status} />
@@ -365,11 +618,7 @@ function MonitoringStatus({
     ready: 'text-emerald-300',
     failed: 'text-red-300',
   }
-  return (
-    <span className={`text-xs whitespace-nowrap ${styles[status]}`}>
-      {labels[status]}
-    </span>
-  )
+  return <span className={`text-xs whitespace-nowrap ${styles[status]}`}>{labels[status]}</span>
 }
 
 function formatCapturedAt(value: string) {
@@ -377,6 +626,10 @@ function formatCapturedAt(value: string) {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(new Date(value))
+}
+
+function capitalize(value: string) {
+  return value.charAt(0).toUpperCase() + value.slice(1)
 }
 
 function DiscoveryState() {

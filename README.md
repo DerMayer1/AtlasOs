@@ -1,120 +1,50 @@
-# AtlasOS
+# Atlas — Macro-Financial Monitoring Platform
 
-**Market intelligence & competitive cartography system.**
-Part of the [Montclair Intelligence Company](https://github.com/DerMayer1) suite.
+> Every number is reproducible; every claim cites its number; every decision
+> leaves a trace.
 
-> Define a market, confirm the competitive set, and maintain website baselines for ongoing intelligence.
+Pluggable quantitative engines produce numbers; a governed orchestrating agent
+produces theses citing those numbers; every decision is traceable to the datum
+that originated it. Full product spec: see the PRD (v1.0, June 2026).
 
----
-
-## Architecture
-
-```
-atlasos/
-├── apps/
-│   ├── web/        # Next.js 16 (App Router) — frontend
-│   └── api/        # FastAPI — pipeline + REST API
-├── packages/
-│   └── types/      # Shared TypeScript types
-```
-
-### Pipeline (8 stages)
+## Architecture at a glance
 
 ```
-CompanyInput
-  → [1] Website Extractor      (httpx + BeautifulSoup)
-  → [2] Category Classifier    (GPT-4o structured output)
-  → [3] Competitor Searcher    (Tavily API)
-  → [4] Competitor Classifier  (GPT-4o 5-type classification)
-  → [5] Positioning Analyzer   (GPT-4o → 2x2 matrix)
-  → [6] Gap Detector           (GPT-4o → market gaps)
-  → [7] Recommendation Engine  (GPT-4o → strategic moves)
-  → [8] Memo Composer          (GPT-4o → Market Memo)
-  → MarketMap + Market Memo (Markdown / PDF)
+src/atlas/
+├── platform/            # domain-agnostic: never imports domain (CI-enforced)
+│   ├── contracts/       # AnalysisWorker + pydantic schemas (the central contract)
+│   ├── audit/           # immutable snapshots (parquet + sha256 manifest), artifacts
+│   └── runtime/         # engine registry (queue/scheduler arrive in Phase 1)
+├── domain/
+│   └── engines/
+│       └── impairment/  # Engine 1: regime-conditional Monte Carlo
+docs/                    # DECISIONS.md (ADRs), limitations.md
+tests/                   # unit, property-based, import-direction lint
 ```
 
-### Market monitoring
+Non-negotiable principles (PRD §7.1):
 
-```
-Workspace
-  → Discover candidate competitors
-  → Confirm the competitive set
-  → Capture website snapshots for the subject and confirmed competitors
-  → Store content hashes and snapshot history for future change detection
-```
+1. Dependency direction: `domain → platform`, never the reverse.
+2. The LLM never calculates — all math lives in deterministic engines.
+3. Nothing runs on live data — only on identified, hash-verified snapshots.
+4. Every decision leaves a trace.
+5. Graceful degradation — narration failure never blocks numbers.
 
-Snapshot capture is deterministic and does not call an LLM. The first baseline is
-queued when the competitive set is confirmed; later refreshes are explicit user
-actions.
+## Quickstart
 
-### Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Frontend | Next.js 16, Tailwind CSS, shadcn/ui |
-| Backend | FastAPI, Python 3.12 |
-| LLM | OpenAI GPT-4o (structured outputs) |
-| Search | Tavily API |
-| Database | Supabase (PostgreSQL) |
-| Auth | Supabase Auth (magic link) |
-| Queue | Redis |
-| Export | WeasyPrint (PDF) |
-| Infra | Vercel (web) + Railway (API) |
-
----
-
-## Getting started
-
-### Prerequisites
-- Node.js 22+, pnpm 11+
-- Python 3.12+
-- Redis running locally
-
-### 1. Install dependencies
-
-```bash
-pnpm install
-cd apps/api && python -m venv .venv && .venv/Scripts/activate && pip install -e ".[dev]"
+```powershell
+py -3.12 -m venv .venv
+.venv\Scripts\pip install -e .[dev]
+.venv\Scripts\pytest
+.venv\Scripts\ruff check .
 ```
 
-### 2. Configure environment
+## Roadmap (PRD §9)
 
-```bash
-cp .env.example .env
-# Fill in: OPENAI_API_KEY, TAVILY_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_KEY
-```
-
-### 3. Apply database migrations
-
-```bash
-cd apps/api
-python migrations/run_migration.py
-```
-
-This requires `SUPABASE_DB_URL` from the Supabase database connection settings.
-
-### 4. Run
-
-```bash
-# Terminal 1 — Frontend
-pnpm dev
-
-# Terminal 2 — API
-cd apps/api && uvicorn app.main:app --reload --port 8000
-
-# Terminal 3 — Worker
-cd apps/api && python -m app.queue.worker
-```
-
-Frontend: http://localhost:3000
-API docs: http://localhost:8000/docs
-
----
-
-## Demo
-
-Live demo: [atlasos.io/demo](https://atlasos.io/demo)
-
----
-
-*Montclair Intelligence Company — AtlasOS v1*
+| Phase | Content | Done when |
+|---|---|---|
+| **0 — Foundation** ✅ | Contracts, schemas, snapshot/artifact stores, registry, Engine 1 behind `AnalysisWorker`, tests, CI | Tests green; import-direction enforced |
+| 1 — Living system | FastAPI, Postgres + Alembic, ARQ/Redis queue, docker compose, API keys | `POST /analyses` → result via `GET` |
+| 2 — Credibility | FRED ingestion, real snapshots, HMM, validation report (2008/2020/2022) | "Detection lag in 2020?" answerable with a number |
+| 3 — Differentiator | Orchestrator, narrator with mandatory citations, trace store, eval suite in CI | Prompt change → CI catches regression |
+| 4 — Public proof | React frontend (clickable citations), Engine 2 (macro monitor), scheduler + alerts, deploy | A stranger uses it unaided via the link |

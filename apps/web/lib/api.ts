@@ -1,5 +1,7 @@
 import type {
   Analysis,
+  CompanyChangeListResponse,
+  CompanySignalListResponse,
   CompanyInput,
   CreateAnalysisResponse,
   CreateWorkspaceInput,
@@ -8,10 +10,12 @@ import type {
   SnapshotListResponse,
   Workspace,
   WorkspaceListResponse,
+  WorkspaceReport,
+  WorkspaceReportListResponse,
 } from '@atlasos/types'
 import { createClient } from './supabase/client'
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8001'
 
 async function getAuthHeader(): Promise<Record<string, string>> {
   const supabase = createClient()
@@ -69,6 +73,22 @@ export const api = {
         { method: 'POST' },
       ),
 
+    ingest: (id: string) =>
+      apiFetch<{ id: string; status: 'pending' }>(
+        `/v1/workspaces/${id}/ingest`,
+        { method: 'POST' },
+      ),
+
+    listSignals: (
+      id: string,
+      params?: { company_id?: string; source?: string; metric?: string; since?: string },
+    ) => {
+      const query = new URLSearchParams(params ?? {}).toString()
+      return apiFetch<CompanySignalListResponse>(
+        `/v1/workspaces/${id}/signals${query ? `?${query}` : ''}`,
+      )
+    },
+
     listSnapshots: (id: string, companyId?: string) => {
       const query = companyId
         ? `?company_id=${encodeURIComponent(companyId)}`
@@ -76,6 +96,33 @@ export const api = {
       return apiFetch<SnapshotListResponse>(
         `/v1/workspaces/${id}/snapshots${query}`,
       )
+    },
+
+    listChanges: (id: string) =>
+      apiFetch<CompanyChangeListResponse>(`/v1/workspaces/${id}/changes`),
+
+    listReports: (id: string) =>
+      apiFetch<WorkspaceReportListResponse>(`/v1/workspaces/${id}/reports`),
+
+    getReport: (id: string, reportId: string) =>
+      apiFetch<WorkspaceReport>(`/v1/workspaces/${id}/reports/${reportId}`),
+
+    exportReport: async (
+      id: string,
+      reportId: string,
+      format: 'pdf' | 'markdown',
+    ) => {
+      const auth = await getAuthHeader()
+      const res = await fetch(
+        `${API_BASE}/v1/workspaces/${id}/reports/${reportId}/export`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...auth },
+          body: JSON.stringify({ format }),
+        },
+      )
+      if (!res.ok) throw new Error('Export failed')
+      return format === 'pdf' ? res.blob() : res.json()
     },
 
     delete: (id: string) =>

@@ -137,6 +137,56 @@ async def list_tracked_companies(workspace_id: str) -> list[dict]:
     return res.data
 
 
+async def set_company_ats(
+    company_id: str,
+    *,
+    provider: str | None,
+    slug: str | None,
+) -> None:
+    """Persist the resolved ATS board for a company (engine v2). See ENGINE_V2.md."""
+    from datetime import UTC, datetime
+
+    client = await get_client()
+    await (
+        client.table("tracked_companies")
+        .update(
+            {
+                "ats_provider": provider,
+                "ats_slug": slug,
+                "ats_resolved_at": datetime.now(UTC).isoformat(),
+            }
+        )
+        .eq("id", company_id)
+        .execute()
+    )
+
+
+async def set_company_ingestion_status(
+    workspace_id: str,
+    status: str,
+    *,
+    company_id: str | None = None,
+    error: str | None = None,
+) -> None:
+    from datetime import UTC, datetime
+
+    client = await get_client()
+    payload: dict[str, Any] = {
+        "ingestion_status": status,
+        "ingestion_error": error,
+    }
+    if status == "ready":
+        payload["last_ingested_at"] = datetime.now(UTC).isoformat()
+    query = client.table("tracked_companies").update(payload).eq(
+        "workspace_id", workspace_id
+    )
+    if company_id:
+        query = query.eq("id", company_id)
+    else:
+        query = query.eq("is_confirmed", True)
+    await query.execute()
+
+
 async def list_confirmed_companies(workspace_id: str) -> list[dict]:
     client = await get_client()
     res = (
@@ -188,6 +238,134 @@ async def list_snapshots(
         query = query.eq("company_id", company_id)
     res = await query.order("captured_at", desc=True).limit(limit).execute()
     return res.data
+
+
+async def get_latest_snapshot(company_id: str) -> dict | None:
+    client = await get_client()
+    res = (
+        await client.table("company_snapshots")
+        .select("*")
+        .eq("company_id", company_id)
+        .order("captured_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    return res.data[0] if res.data else None
+
+
+async def company_change_exists(
+    previous_snapshot_id: str,
+    current_snapshot_id: str,
+) -> bool:
+    client = await get_client()
+    res = (
+        await client.table("company_changes")
+        .select("id")
+        .eq("previous_snapshot_id", previous_snapshot_id)
+        .eq("current_snapshot_id", current_snapshot_id)
+        .limit(1)
+        .execute()
+    )
+    return bool(res.data)
+
+
+async def create_company_change(
+    workspace_id: str,
+    company_id: str,
+    previous_snapshot_id: str,
+    current_snapshot_id: str,
+    classification: dict,
+    evidence: dict,
+) -> dict:
+    client = await get_client()
+    res = await client.table("company_changes").insert({
+        "workspace_id": workspace_id,
+        "company_id": company_id,
+        "previous_snapshot_id": previous_snapshot_id,
+        "current_snapshot_id": current_snapshot_id,
+        "category": classification["category"],
+        "relevance": classification["relevance"],
+        "summary": classification["summary"],
+        "evidence": evidence,
+    }).execute()
+    return res.data[0]
+
+
+async def list_company_changes(
+    workspace_id: str,
+    *,
+    company_id: str | None = None,
+    relevance: str | None = None,
+    limit: int = 100,
+) -> list[dict]:
+    client = await get_client()
+    query = (
+        client.table("company_changes")
+        .select("*")
+        .eq("workspace_id", workspace_id)
+    )
+    if company_id:
+        query = query.eq("company_id", company_id)
+    if relevance:
+        query = query.eq("relevance", relevance)
+    res = await query.order("created_at", desc=True).limit(limit).execute()
+    return res.data
+
+
+async def create_workspace_report(
+    workspace_id: str,
+    report_type: str,
+    title: str,
+    content_md: str,
+    metadata: dict | None = None,
+) -> dict:
+    client = await get_client()
+    res = await client.table("workspace_reports").insert({
+        "workspace_id": workspace_id,
+        "report_type": report_type,
+        "title": title,
+        "content_md": content_md,
+        "metadata": metadata or {},
+    }).execute()
+    return res.data[0]
+
+
+async def list_workspace_reports(workspace_id: str) -> list[dict]:
+    client = await get_client()
+    res = (
+        await client.table("workspace_reports")
+        .select("id,workspace_id,report_type,title,metadata,created_at")
+        .eq("workspace_id", workspace_id)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return res.data
+
+
+async def get_workspace_report(report_id: str, workspace_id: str) -> dict | None:
+    client = await get_client()
+    res = (
+        await client.table("workspace_reports")
+        .select("*")
+        .eq("id", report_id)
+        .eq("workspace_id", workspace_id)
+        .maybe_single()
+        .execute()
+    )
+    return res.data
+
+
+async def has_workspace_report(workspace_id: str, report_type: str) -> bool:
+    client = await get_client()
+    res = (
+        await client.table("workspace_reports")
+        .select("id")
+        .eq("workspace_id", workspace_id)
+        .eq("report_type", report_type)
+        .limit(1)
+        .execute()
+    )
+    return bool(res.data)
 
 
 async def set_companies_monitoring_status(
