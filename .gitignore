@@ -8,12 +8,10 @@ __pycache__/
 .coverage
 htmlcov/
 
-# Data (snapshots and artifacts are runtime state, never committed)
-data/
-var/
-
-# Legacy project leftovers (pending removal)
-apps/
+# Runtime state (snapshots, artifacts, FRED cache, sqlite) — never committed.
+# Note: anchored to repo root so it does NOT match src/atlas/domain/data/.
+/var/
+/data/
 
 # OS / editors
 .DS_Store

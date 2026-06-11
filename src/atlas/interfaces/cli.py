@@ -72,17 +72,56 @@ def cmd_seed() -> None:
     print(f"api_key     : {token}   (shown once — store it now)")
 
 
+def cmd_ingest() -> None:
+    """Fetch FRED data and freeze it as a snapshot (PRD R4 + R2)."""
+    from atlas.domain.data.fred import FredClient, build_macro_frame
+    from atlas.platform.audit.snapshots import SnapshotStore
+    from atlas.platform.db.models import Base, SnapshotRow
+    from atlas.platform.db.session import make_engine, make_session_factory
+
+    settings = get_settings()
+    client = FredClient(settings.data_dir / "cache" / "fred")
+    macro = build_macro_frame(client)
+
+    snapshots = SnapshotStore(settings.data_dir / "snapshots")
+    manifest = snapshots.create(
+        {"macro": macro},
+        sources=["fredgraph:fed_funds,baa_aaa_spread,t10y2y,cpi_yoy,unemployment"],
+        period_start=str(macro.index.min().date()),
+        period_end=str(macro.index.max().date()),
+    )
+
+    engine = make_engine(settings.database_url)
+    if settings.auto_create_schema and settings.database_url.startswith("sqlite"):
+        Base.metadata.create_all(engine)
+    with make_session_factory(engine)() as session:
+        if session.get(SnapshotRow, manifest.snapshot_id) is None:
+            session.add(
+                SnapshotRow(
+                    snapshot_id=manifest.snapshot_id,
+                    manifest=manifest.model_dump(mode="json"),
+                )
+            )
+            session.commit()
+    print(f"snapshot_id : {manifest.snapshot_id}")
+    print(f"period      : {manifest.period_start} -> {manifest.period_end}")
+    print(f"rows        : {manifest.tables[0].rows}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="atlas")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("init-db")
     sub.add_parser("seed")
+    sub.add_parser("ingest")
     args = parser.parse_args(argv)
 
     if args.command == "init-db":
         cmd_init_db()
     elif args.command == "seed":
         cmd_seed()
+    elif args.command == "ingest":
+        cmd_ingest()
     return 0
 
 

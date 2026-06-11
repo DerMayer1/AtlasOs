@@ -52,9 +52,49 @@ Phase 3 deliverable. Until then the endpoint answers exactly as the PRD edge
 case demands of the future agent: it states it has no agent capability and
 lists the engines that exist. Never inventing > pretending.
 
+## ADR-007 — FRED ingestion via the keyless fredgraph endpoint
+
+Phase 2 ingests from `fred.stlouisfed.org/graph/fredgraph.csv`, which needs no
+API key, rather than the JSON API (which does). Rationale: zero-config
+reproducibility for an external evaluator (PRD persona 4) and no secret to
+manage in CI. The `DataSource` abstraction (PRD P2) still applies — fredgraph
+is one implementation. Daily series (T10Y2Y, VIXCLS) are fetched in 5-year
+chunks because the endpoint returns 504 on full-history daily requests;
+monthly series come in one request. Caching is incremental: refreshes refetch
+only from 60 days before the last cached point to absorb FRED's retroactive
+revisions, exactly the scenario snapshots exist to neutralize (PRD risk table,
+last row).
+
+## ADR-008 — HMM feature set: unemployment *change*, not level
+
+The Phase 2 production model is a 3-state diagonal-Gaussian HMM fit by
+Baum-Welch in plain numpy (≈150 lines we control, for bit-reproducibility —
+seeded k-means init + fixed iteration budget). Features are fed-funds, BAA-AAA
+spread, 10y-2y curve, CPI YoY, and the **12-month change** in unemployment.
+The level was tried first and made the crisis state absorb the entire jobless
+recovery (124 expansion months mislabeled crisis in the first run), because the
+unemployment level stays elevated for years after a recession ends. The change
+is a coincident signal instead of a lagging one. The Phase 0 z-score classifier
+is retained as `regime_model="zscore"` and is the comparison baseline in the
+validation report (ADR-002 fulfilled).
+
+## ADR-009 — Validation results are published as-is
+
+The validation report (`docs/validation_report.md`) shows the HMM beaten on
+crisis-detection *precision* by both naive benchmarks (VIX>30, wide spread),
+with a documented over-prediction bias during post-recession credit
+normalization. Per PRD risk #1 ("honestidade é feature") these numbers are
+published unmodified rather than tuned until they flatter the model. Improving
+calibration (spread *change* as a feature, daily-frequency detection) is
+legitimate future work in the parking lot, not a blocker for shipping the
+phase.
+
 ## Parking lot
 
 - Citation locator granularity (PRD Q1) — decide in Phase 3.
 - LLM model choice for prod vs evals (PRD Q3) — decide in Phase 3.
 - Demo data for public deploy (PRD Q4) — decide in Phase 4.
 - Snapshot retention policy (PRD Q5) — post-v1.
+- HMM calibration (PRD Q2, still open): spread *change* feature to cut the
+  post-recession false-positive bias; daily-frequency detection for sub-month
+  lag resolution; historical regression for the stress-shock coefficients.

@@ -204,9 +204,20 @@ def _router():
         else:
             checks["queue"] = "in-process"
 
-        checks["fred"] = "not_configured"  # Phase 2
+        try:
+            import httpx
 
-        status = "ok" if all(not v.startswith("error") for v in checks.values()) else "degraded"
+            from atlas.domain.data.fred import FREDGRAPH_URL
+
+            resp = httpx.head(FREDGRAPH_URL, params={"id": "FEDFUNDS"}, timeout=3.0)
+            checks["fred"] = "ok" if resp.status_code < 500 else f"error: {resp.status_code}"
+        except Exception as exc:
+            checks["fred"] = f"error: {type(exc).__name__}"
+
+        # fred is informational: an outage degrades ingestion, not the API
+        # (scheduled analyses fall back to the last valid snapshot, PRD §5).
+        core = (checks["database"], checks["queue"])
+        status = "ok" if all(not v.startswith("error") for v in core) else "degraded"
         return {"status": status, "checks": checks}
 
     return router

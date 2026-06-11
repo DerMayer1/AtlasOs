@@ -15,12 +15,13 @@ from __future__ import annotations
 
 import io
 import uuid
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field
 
+from atlas.domain.engines.impairment.hmm import regime_probabilities_hmm
 from atlas.domain.engines.impairment.regimes import REGIMES, regime_probabilities
 from atlas.platform.contracts.schemas import (
     AnalysisRequest,
@@ -51,12 +52,15 @@ class ImpairmentParams(BaseModel):
     companies: list[Company] = Field(min_length=1)
     n_sims: int = Field(default=10_000, ge=100, le=1_000_000)
     seed: int = Field(default=0, ge=0)
+    # hmm = production model (Phase 2); zscore = Phase 0 baseline, kept as the
+    # comparison model for the validation report.
+    regime_model: Literal["hmm", "zscore"] = "hmm"
 
 
 class ImpairmentEngine:
     name = "impairment"
-    engine_version = "0.1.0"
-    model_version = "regime-zscore-mc-0.1"
+    engine_version = "0.2.0"
+    model_version = "hmm3-mc-0.2"
 
     def describe(self) -> str:
         return (
@@ -72,7 +76,10 @@ class ImpairmentEngine:
         if "macro" not in tables:
             raise ValueError(f"snapshot {request.snapshot_id} has no 'macro' table")
 
-        regime_probs = regime_probabilities(tables["macro"])
+        if params.regime_model == "hmm":
+            regime_probs = regime_probabilities_hmm(tables["macro"])
+        else:
+            regime_probs = regime_probabilities(tables["macro"])
         rng = np.random.default_rng(params.seed)
 
         regime_draws = rng.choice(len(REGIMES), size=params.n_sims, p=regime_probs.to_numpy())
