@@ -1,4 +1,4 @@
-# Known limitations (Phase 0)
+# Known limitations (Phase 1)
 
 Honesty is a feature. What this system does **not** yet do:
 
@@ -10,8 +10,9 @@ Honesty is a feature. What this system does **not** yet do:
    are placeholders pending historical regression / literature review (PRD Q2).
 3. **No live data.** There is no FRED ingestion yet; snapshots are created from
    caller-provided frames. Phase 2 adds `atlas.domain.data`.
-4. **No API, queue, scheduler or agent.** Engines run in-process only (Phase 1
-   adds the API/queue; Phase 3 adds the orchestrator/narrator).
+4. **No scheduler, alerts or agent.** Analyses run on demand via the API;
+   POST /agent/ask is an honest stub until Phase 3; scheduling is Phase 4.
 5. **Valuation is a single-multiple model.** EV = EBITDA x multiple over a
    one-year horizon; no DCF, no WACC, no multi-year paths yet.
-6. **Single tenant, no auth.** API keys arrive with the API in Phase 1.
+6. **Single tenant.** API keys with read/run scopes exist; organizations and
+   billing are out of scope for v1 (PRD NG4).

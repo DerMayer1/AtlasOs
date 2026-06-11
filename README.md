@@ -15,11 +15,19 @@ src/atlas/
 │   ├── contracts/       # AnalysisWorker + pydantic schemas (the central contract)
 │   ├── audit/           # immutable snapshots (parquet + sha256 manifest), artifacts
 │   └── runtime/         # engine registry (queue/scheduler arrive in Phase 1)
+│   ├── db/              # SQLAlchemy models (Postgres = source of truth)
+│   └── runtime/         # registry, queue (ARQ/in-process), runner, settings
 ├── domain/
+│   ├── data/            # synthetic demo data (FRED arrives in Phase 2)
 │   └── engines/
 │       └── impairment/  # Engine 1: regime-conditional Monte Carlo
+└── interfaces/
+    ├── api/             # FastAPI app, API-key auth (read/run scopes)
+    ├── worker.py        # ARQ worker (3 retries, exponential backoff)
+    └── cli.py           # init-db, seed
 docs/                    # DECISIONS.md (ADRs), limitations.md
-tests/                   # unit, property-based, import-direction lint
+migrations/              # Alembic
+tests/                   # unit, property-based, API e2e, import-direction lint
 ```
 
 Non-negotiable principles (PRD §7.1):
@@ -30,21 +38,43 @@ Non-negotiable principles (PRD §7.1):
 4. Every decision leaves a trace.
 5. Graceful degradation — narration failure never blocks numbers.
 
-## Quickstart
+## Quickstart (local, no Docker)
 
 ```powershell
 py -3.12 -m venv .venv
 .venv\Scripts\pip install -e .[dev]
-.venv\Scripts\pytest
-.venv\Scripts\ruff check .
+.venv\Scripts\pytest                            # full suite
+.venv\Scripts\python -m atlas.interfaces.cli seed   # demo snapshot + portfolio + API key
+.venv\Scripts\uvicorn atlas.interfaces.api.app:create_app --factory
 ```
+
+Then (replace the key/ids printed by `seed`):
+
+```powershell
+$h = @{ "X-API-Key" = "<api_key>" }
+Invoke-RestMethod -Method Post http://127.0.0.1:8000/analyses -Headers $h `
+  -ContentType application/json -Body '{"engine":"impairment","portfolio_id":"<pf_id>"}'
+Invoke-RestMethod http://127.0.0.1:8000/analyses/<job_id> -Headers $h
+```
+
+## Full system (Postgres + Redis + worker)
+
+```bash
+docker compose up --build
+docker compose run --rm api python -m atlas.interfaces.cli seed
+```
+
+API at http://localhost:8000 (OpenAPI docs at `/docs`). Endpoints: `POST /portfolios`,
+`POST /analyses` (returns `job_id`), `GET /analyses/{id}`, `POST /agent/ask`,
+`GET /artifacts/{run_id}/{name}`, `GET /health`. Auth via `X-API-Key` with
+`read`/`run` scopes.
 
 ## Roadmap (PRD §9)
 
 | Phase | Content | Done when |
 |---|---|---|
 | **0 — Foundation** ✅ | Contracts, schemas, snapshot/artifact stores, registry, Engine 1 behind `AnalysisWorker`, tests, CI | Tests green; import-direction enforced |
-| 1 — Living system | FastAPI, Postgres + Alembic, ARQ/Redis queue, docker compose, API keys | `POST /analyses` → result via `GET` |
+| **1 — Living system** ✅ | FastAPI, Postgres + Alembic, ARQ/Redis queue, docker compose, API keys | `POST /analyses` → result via `GET` |
 | 2 — Credibility | FRED ingestion, real snapshots, HMM, validation report (2008/2020/2022) | "Detection lag in 2020?" answerable with a number |
 | 3 — Differentiator | Orchestrator, narrator with mandatory citations, trace store, eval suite in CI | Prompt change → CI catches regression |
 | 4 — Public proof | React frontend (clickable citations), Engine 2 (macro monitor), scheduler + alerts, deploy | A stranger uses it unaided via the link |

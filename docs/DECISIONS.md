@@ -33,6 +33,25 @@ uncalibrated placeholders. PRD Q2 (calibrate by historical regression or
 literature) is blocking for R6 and is scheduled for Phase 2. Tracked in
 `docs/limitations.md`.
 
+## ADR-005 — Sync SQLAlchemy + dual queue mode for Phase 1
+
+Persistence uses synchronous SQLAlchemy (psycopg) — FastAPI runs sync endpoints
+in its threadpool, and the ARQ worker offloads the sync runner to an executor.
+Async DB would add asyncpg/aiosqlite complexity with no benefit at v1 load.
+
+The queue is an interface with two implementations: ARQ + Redis in production
+(`ATLAS_REDIS_URL` set) and an in-process queue for dev/tests (empty URL). The
+API contract is identical in both modes: POST /analyses returns a job_id and
+clients poll GET /analyses/{id}. Tests therefore exercise the real API surface
+without service containers; docker compose exercises the real queue.
+
+## ADR-006 — /agent/ask ships as an honest stub until Phase 3
+
+The PRD lists POST /agent/ask as a P0 endpoint, but the orchestrator is a
+Phase 3 deliverable. Until then the endpoint answers exactly as the PRD edge
+case demands of the future agent: it states it has no agent capability and
+lists the engines that exist. Never inventing > pretending.
+
 ## Parking lot
 
 - Citation locator granularity (PRD Q1) — decide in Phase 3.

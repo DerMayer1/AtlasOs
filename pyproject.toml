@@ -9,9 +9,18 @@ description = "Atlas - macro-financial monitoring platform: pluggable quantitati
 requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.7",
+    "pydantic-settings>=2.2",
     "numpy>=1.26",
     "pandas>=2.2",
     "pyarrow>=16.0",
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.1",
+    "arq>=0.26",
+    "redis>=5.0",
+    "httpx>=0.27",
 ]
 
 [project.optional-dependencies]

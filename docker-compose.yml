@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: atlas
+      POSTGRES_PASSWORD: atlas
+      POSTGRES_DB: atlas
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlas"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build: .
+    environment: &atlas_env
+      ATLAS_DATABASE_URL: postgresql+psycopg://atlas:atlas@postgres:5432/atlas
+      ATLAS_REDIS_URL: redis://redis:6379
+      ATLAS_DATA_DIR: /data
+      ATLAS_AUTO_CREATE_SCHEMA: "false"
+    ports: ["8000:8000"]
+    volumes: [atlasdata:/data]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    command: >
+      sh -c "python -m atlas.interfaces.cli init-db &&
+             uvicorn atlas.interfaces.api.app:create_app --factory --host 0.0.0.0 --port 8000"
+
+  worker:
+    build: .
+    environment: *atlas_env
+    volumes: [atlasdata:/data]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    command: arq atlas.interfaces.worker.WorkerSettings
+
+volumes:
+  pgdata:
+  atlasdata:
