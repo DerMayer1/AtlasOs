@@ -8,6 +8,10 @@ __pycache__/
 .coverage
 htmlcov/
 
+# Secrets — real .env is never committed; .env.example (no secrets) is.
+.env
+!.env.example
+
 # Runtime state (snapshots, artifacts, FRED cache, sqlite) — never committed.
 # Note: anchored to repo root so it does NOT match src/atlas/domain/data/.
 /var/
