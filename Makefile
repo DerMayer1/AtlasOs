@@ -1,4 +1,4 @@
-.PHONY: install test lint reproduce
+.PHONY: install test lint reproduce validation-report calibrate-shocks evals
 
 install:
 	pip install -e .[dev]
@@ -14,3 +14,9 @@ reproduce:
 
 validation-report:
 	python scripts/validation_report.py
+
+calibrate-shocks:
+	python scripts/calibrate_shocks.py
+
+evals:
+	python -m atlas.agent.evals.runner

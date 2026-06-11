@@ -16,6 +16,7 @@ from __future__ import annotations
 import io
 import json
 import uuid
+from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
@@ -32,14 +33,27 @@ from atlas.platform.contracts.schemas import (
 )
 from atlas.platform.contracts.worker import RunContext
 
-# EBITDA growth shock per regime: (mean, std). Phase 2 will calibrate these by
-# historical regression for the validation report (PRD Q2); current values are
-# placeholders flagged in docs/limitations.md.
-_SHOCKS = {
+# EBITDA growth shock per regime: (mean, std). Calibrated from history by
+# scripts/calibrate_shocks.py (regime-dummy regression of corporate-profit
+# growth, closing PRD Q2); see shock_calibration.json for provenance. The
+# fallback below is used only if the calibration file is absent.
+_CALIBRATION_FILE = Path(__file__).parent / "shock_calibration.json"
+_FALLBACK_SHOCKS = {
     "expansion": (0.05, 0.08),
     "tightening": (-0.02, 0.12),
     "crisis": (-0.15, 0.20),
 }
+
+
+def _load_shocks() -> dict[str, tuple[float, float]]:
+    if _CALIBRATION_FILE.exists():
+        data = json.loads(_CALIBRATION_FILE.read_text())
+        return {r: (v["mean"], v["std"]) for r, v in data["shocks"].items()}
+    return dict(_FALLBACK_SHOCKS)
+
+
+_SHOCKS = _load_shocks()
+_SHOCKS_CALIBRATED = _CALIBRATION_FILE.exists()
 
 
 class Company(BaseModel):
@@ -60,8 +74,9 @@ class ImpairmentParams(BaseModel):
 
 class ImpairmentEngine:
     name = "impairment"
-    engine_version = "0.3.0"
-    model_version = "hmm3-mc-0.2"
+    engine_version = "0.4.0"
+    # hmm3sc = 3-state HMM with spread *change* feature; cal = calibrated shocks.
+    model_version = "hmm3sc-mc-cal-0.3"
 
     def describe(self) -> str:
         return (

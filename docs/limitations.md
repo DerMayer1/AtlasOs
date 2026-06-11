@@ -12,21 +12,26 @@ Honesty is a feature. What this system does **not** yet do:
    narration, citation validation and prompt wiring — but not changes in the
    real model's behaviour. A live eval run needs a key and is manual.
 
-1. **The HMM is outperformed by naive rules on crisis precision.** The
-   validation report (`validation_report.md`) shows VIX>30 and a wide-spread
-   rule both beat the HMM on precision. The model over-predicts crisis during
-   post-recession credit normalization (high recall, low precision). It is a
-   conservative bias — defensible for monitoring, but a real weakness, published
-   unmodified (PRD risk #1).
+1. **The HMM is outperformed by naive rules on crisis precision, and this is
+   structural.** VIX>30 and a wide-spread rule both beat the HMM on precision.
+   We investigated (ADR-015): switching the spread feature from level to change
+   improved real-time COVID detection but did *not* lift precision, and a causal
+   threshold sweep is flat because the probabilities are saturated — the model
+   *confidently* over-calls crisis. The cause is unsupervised states (comparably
+   sized) vs. a rare label (~16% of months). The real fix is supervised/
+   semi-supervised calibration of the crisis state; published unmodified meanwhile
+   (PRD risk #1). High recall makes it a defensible *monitoring* bias.
 2. **Detection lag resolves only to the month.** Macro data is monthly, so a
    "1-month lag" could be anywhere from 1 to ~30 days. Daily-frequency detection
    is parking-lot work.
-3. **Stress shocks are uncalibrated.** The per-regime EBITDA shock parameters
-   are literature-informed placeholders, not yet fit by historical regression
-   (PRD Q2, still open). The validation report's sensitivity grid shows how much
-   P(impairment) moves across plausible values.
-4. **No scheduler, alerts or agent.** Analyses run on demand via the API;
-   POST /agent/ask is an honest stub until Phase 3; scheduling is Phase 4.
+3. **Stress shocks are calibrated, but the std is an aggregate lower bound.**
+   The per-regime shocks are now fit by regime-dummy regression of corporate
+   profits over NBER+ windows (PRD Q2 closed; ADR-016). But `CP` is aggregate,
+   so its volatility understates single-company EBITDA dispersion — the
+   regime-conditional *mean* is well identified, the *std* is a floor.
+   Cross-sectional dispersion calibration is future work.
+4. **No scheduler or alerts.** Analyses and agent runs are on demand via the
+   API; recurring analysis and threshold alerts are Phase 4.
 5. **Valuation is a single-multiple model.** EV = EBITDA x multiple over a
    one-year horizon; no DCF, no WACC, no multi-year paths yet.
 6. **Single tenant.** API keys with read/run scopes exist; organizations and

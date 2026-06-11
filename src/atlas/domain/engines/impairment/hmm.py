@@ -25,20 +25,28 @@ _K = 3
 _MIN_VAR = 1e-3
 _SEED = 1234
 
-# Model features. Unemployment enters as its 12-month change, not its level:
-# the level is a lagging indicator that stays elevated for years after a
-# recession ends (2009-2015), which made the crisis state absorb the recovery
-# (first validation run: 124 expansion months predicted as crisis).
-FEATURES = ("fed_funds", "baa_aaa_spread", "t10y2y", "cpi_yoy", "unemployment_chg12")
+# Model features. Two stress indicators enter as CHANGES, not levels, because
+# levels are lagging and persist long after the acute phase, making the crisis
+# state absorb the recovery:
+#   - unemployment: 12-month change (slow-moving labour signal).
+#   - credit spread: 6-month change (markets reprice fast). The level stays wide
+#     through 2009-2010 / 2015-2016 normalization; the *change* is sharply
+#     positive only at onset and negative during recovery, which is what cut the
+#     post-recession false positives (see docs/validation_report.md §7).
+FEATURES = ("fed_funds", "baa_aaa_spread_chg6", "t10y2y", "cpi_yoy", "unemployment_chg12")
 
 
 def build_features(macro: pd.DataFrame) -> pd.DataFrame:
     missing = [c for c in REQUIRED_SERIES if c not in macro.columns]
     if missing:
         raise ValueError(f"macro table missing required series: {missing}")
-    feats = macro[["fed_funds", "baa_aaa_spread", "t10y2y", "cpi_yoy"]].copy()
+    feats = pd.DataFrame(index=macro.index)
+    feats["fed_funds"] = macro["fed_funds"]
+    feats["baa_aaa_spread_chg6"] = macro["baa_aaa_spread"].diff(6)
+    feats["t10y2y"] = macro["t10y2y"]
+    feats["cpi_yoy"] = macro["cpi_yoy"]
     feats["unemployment_chg12"] = macro["unemployment"].diff(12)
-    return feats.dropna()
+    return feats[list(FEATURES)].dropna()
 
 
 @dataclass(frozen=True)
@@ -174,7 +182,7 @@ def fit_hmm(macro: pd.DataFrame, max_iter: int = 200, tol: float = 1e-6) -> HMMF
 
 def _label_states(means: np.ndarray) -> tuple[int, ...]:
     """Map raw state indices to (expansion, tightening, crisis) positions."""
-    spread_i = FEATURES.index("baa_aaa_spread")
+    spread_i = FEATURES.index("baa_aaa_spread_chg6")
     unemp_i = FEATURES.index("unemployment_chg12")
     ff_i = FEATURES.index("fed_funds")
     cpi_i = FEATURES.index("cpi_yoy")

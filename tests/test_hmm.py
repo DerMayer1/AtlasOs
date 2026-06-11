@@ -10,27 +10,26 @@ from atlas.domain.engines.impairment.regimes import REGIMES, REQUIRED_SERIES
 
 def synthetic_regime_macro(seed: int = 0) -> tuple[pd.DataFrame, pd.Series]:
     """200 months alternating expansion -> tightening -> crisis with distinct
-    macro signatures. Unemployment is built as a level path whose 12m change
-    is the crisis signal (mirrors the production feature set).
-    Returns (frame, true_labels)."""
+    macro signatures. Unemployment and the credit spread are built as level
+    paths whose CHANGES are the crisis signal (mirrors the production feature
+    set: unemployment 12m change, spread 6m change). Returns (frame, labels)."""
     rng = np.random.default_rng(seed)
     blocks = [
-        ("expansion", 60, {"fed_funds": 1.5, "baa_aaa_spread": 0.8, "t10y2y": 1.5,
-                           "cpi_yoy": 2.0}, 0.0),
-        ("tightening", 40, {"fed_funds": 5.0, "baa_aaa_spread": 1.0, "t10y2y": -0.3,
-                            "cpi_yoy": 6.0}, 0.0),
-        ("crisis", 30, {"fed_funds": 1.0, "baa_aaa_spread": 2.8, "t10y2y": 1.0,
-                        "cpi_yoy": 0.5}, 0.25),  # unemployment rising fast
-        ("expansion", 70, {"fed_funds": 2.0, "baa_aaa_spread": 0.9, "t10y2y": 1.2,
-                           "cpi_yoy": 2.5}, -0.05),  # slow recovery
+        # (label, months, level means, unemp slope/mo, spread slope/mo)
+        ("expansion", 60, {"fed_funds": 1.5, "t10y2y": 1.5, "cpi_yoy": 2.0}, 0.0, 0.0),
+        ("tightening", 40, {"fed_funds": 5.0, "t10y2y": -0.3, "cpi_yoy": 6.0}, 0.0, 0.0),
+        ("crisis", 30, {"fed_funds": 1.0, "t10y2y": 1.0, "cpi_yoy": 0.5}, 0.25, 0.30),
+        ("expansion", 70, {"fed_funds": 2.0, "t10y2y": 1.2, "cpi_yoy": 2.5}, -0.05, -0.06),
     ]
     rows, labels = [], []
-    unemployment = 4.0
-    for label, n, means, unemp_slope in blocks:
+    unemployment, spread = 4.0, 0.9
+    for label, n, means, unemp_slope, spread_slope in blocks:
         for _ in range(n):
             unemployment = max(2.5, unemployment + unemp_slope + rng.normal(0, 0.05))
+            spread = max(0.3, spread + spread_slope + rng.normal(0, 0.03))
             row = {k: means[k] + rng.normal(0, 0.15) for k in means}
             row["unemployment"] = unemployment
+            row["baa_aaa_spread"] = spread
             rows.append(row)
             labels.append(label)
     idx = pd.date_range("2000-01-31", periods=len(rows), freq="ME")

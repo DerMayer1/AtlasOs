@@ -77,17 +77,21 @@ via `X-API-Key` with `read`/`run` scopes.
 
 ```powershell
 .venv\Scripts\python -m atlas.interfaces.cli ingest   # FRED → frozen snapshot
+make calibrate-shocks                                 # fit per-regime EBITDA shocks from corporate profits
 make validation-report                                # regenerate docs/validation_report.md + figures
 ```
 
 Ingestion pulls five macro series from FRED's keyless `fredgraph` endpoint
 (cached, incremental), freezes them as a hash-verified snapshot, and indexes it
 in Postgres. The regime model is a 3-state Gaussian HMM (`regime_model="hmm"`,
-the default); the Phase 0 z-score classifier remains available as
-`regime_model="zscore"` and is the baseline in the validation report. The report
-itself ([docs/validation_report.md](docs/validation_report.md)) is regenerated
-from a frozen snapshot — same snapshot, same numbers — and publishes the model's
-results honestly, including where naive benchmarks beat it.
+the default, with a credit-spread *change* feature); the Phase 0 z-score
+classifier remains available as `regime_model="zscore"` and is the baseline in
+the validation report. The per-regime stress shocks are calibrated from
+corporate-profit history (`make calibrate-shocks` → `shock_calibration.json`).
+The report itself ([docs/validation_report.md](docs/validation_report.md)) is
+regenerated from a frozen snapshot — same snapshot, same numbers — and publishes
+the model's results honestly, including where naive benchmarks beat it and the
+finding that the crisis-precision ceiling is structural (§4b).
 
 ## The agent: every claim cites its number (Phase 3)
 

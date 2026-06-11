@@ -1,0 +1,31 @@
+{
+  "method": "regime-dummy regression of CP YoY growth on REFERENCE (NBER+) regime windows; mean+std per regime",
+  "snapshot_id": "snap_6f94201ca0f2ebe4",
+  "profits_series": "CP",
+  "data_period": [
+    "2000-03-31",
+    "2026-03-31"
+  ],
+  "generated_at": "2026-06-11T22:12:06.906104+00:00",
+  "caveat": "CP is aggregate; its std understates single-company EBITDA dispersion. The regime-conditional mean is well identified; std is a lower bound.",
+  "shocks": {
+    "expansion": {
+      "mean": 0.1008,
+      "std": 0.1708,
+      "n_quarters": 65,
+      "source": "calibrated"
+    },
+    "tightening": {
+      "mean": 0.121,
+      "std": 0.1241,
+      "n_quarters": 23,
+      "source": "calibrated"
+    },
+    "crisis": {
+      "mean": -0.0207,
+      "std": 0.184,
+      "n_quarters": 17,
+      "source": "calibrated"
+    }
+  }
+}

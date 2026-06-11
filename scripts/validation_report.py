@@ -132,6 +132,25 @@ def main() -> None:
     })
     naive = pd.DataFrame(naive_rows).set_index("rule")
 
+    # --- P(crisis) threshold sweep --------------------------------------------
+    # On the CAUSAL (filtered) probability the engine actually consumes at run
+    # time. If the rows barely move, the probabilities are saturated (~0/1) and
+    # the misclassification is confident, not marginal — see §4b prose.
+    crisis_prob = regime_path(macro, fit, smoothed=False).loc[EVAL_START:]["crisis"]
+    sweep_rows = []
+    for thr in (0.3, 0.5, 0.7, 0.9):
+        sig = crisis_prob >= thr
+        tp = int((sig & is_crisis).sum())
+        fp = int((sig & ~is_crisis).sum())
+        fn = int((~sig & is_crisis).sum())
+        sweep_rows.append({
+            "threshold": thr,
+            "precision": tp / (tp + fp) if tp + fp else 0.0,
+            "recall": tp / (tp + fn) if tp + fn else 0.0,
+            "months_flagged": int(sig.sum()),
+        })
+    sweep = pd.DataFrame(sweep_rows).set_index("threshold")
+
     # --- z-score baseline ------------------------------------------------------
     pred_z = zscore_path(macro).loc[EVAL_START:].idxmax(axis=1)
     acc_z = accuracy(labels, pred_z)
@@ -192,7 +211,7 @@ regenerates byte-comparable numbers from the same snapshot).*
 |---|---|
 | Snapshot | `{manifest.snapshot_id}` |
 | Data period | {macro.index.min().date()} → {macro.index.max().date()} (monthly) |
-| Model | 3-state diagonal-Gaussian HMM, `hmm3-mc-0.2` |
+| Model | 3-state diagonal-Gaussian HMM (spread-change feature), `hmm3sc-mc-cal-0.3` |
 | Evaluation window | 2000-01 → {macro.index.max().date()} |
 
 Reference labels are NBER recessions plus Fed hiking cycles (see
@@ -224,6 +243,25 @@ Out-of-sample accuracy: **{acc_oos:.1%}**.
 
 {md_table(naive.round(3))}
 
+The HMM row uses the argmax label, which is an unfair operating point: argmax
+over three comparably-sized unsupervised states over-calls a rare label
+(crisis is ~16% of months) by construction, so precision is low. The engine
+does **not** use argmax — it consumes the crisis probability. §4b is the
+operating-point that matters.
+
+## 4b. HMM by P(crisis) threshold (causal / filtered — how the engine uses it)
+
+{md_table(sweep.round(3))}
+
+The rows barely move from threshold 0.3 to 0.9: the filtered probabilities are
+**saturated** (near 0 or 1), so a threshold does not separate the false
+positives. The model is not *marginally* over-calling crisis — it is
+*confidently* assigning P(crisis)≈1 to ~150 months, most of them expansion. That
+is the strongest evidence the precision ceiling is **structural** (an
+unsupervised 3-state split vs. a rare label), and that neither the spread-change
+feature nor a probability threshold fixes it. The honest fix is supervised or
+semi-supervised calibration of the crisis state (parking lot, DECISIONS.md).
+
 ## 5. Sensitivity — crisis EBITDA shock parameters
 
 P(impairment) for a reference company (EBITDA 100, multiple 8.0, carrying
@@ -232,9 +270,17 @@ near zero, which would make the grid flat), varying the crisis shock:
 
 {md_table(sensitivity.round(3))}
 
-The production values (mu={_SHOCKS["crisis"][0]}, sigma={_SHOCKS["crisis"][1]}) sit in the
-middle of this grid. They remain literature-informed placeholders pending
-historical calibration (PRD Q2 — still open; tracked in DECISIONS.md).
+The production crisis values (mu={_SHOCKS["crisis"][0]:.3f}, sigma={_SHOCKS["crisis"][1]:.3f})
+are now **calibrated from history**, not chosen (PRD Q2 closed): a regime-dummy
+regression of corporate-profit (FRED `CP`) year-over-year growth on the
+reference NBER+ regime windows — see `scripts/calibrate_shocks.py` and
+`shock_calibration.json`. Two honest caveats: (1) `CP` is aggregate, so its
+volatility understates single-company EBITDA dispersion — the regime-conditional
+*mean* is well identified, the *std* is a lower bound; (2) the mild crisis mean
+is pulled up by the 2011 stress-without-recession window (profits were still
+growing) and by nominal aggregate growth. The grid above shows P(impairment)
+stays materially sensitive to these, so the residual uncertainty is quantified,
+not hidden.
 
 ## 6. Figures
 
@@ -246,12 +292,19 @@ historical calibration (PRD Q2 — still open; tracked in DECISIONS.md).
 
 - The HMM is compared against trivially simple rules in §4 on purpose; where a
   naive rule wins on a metric, that is reported, not hidden.
-- The model's characteristic failure is **over-predicting crisis during
-  post-recession credit normalization** (2003, 2009-10, 2015-16): spreads stay
-  wide after the acute phase ends, so recall is high ({tp}/{tp + fn} crisis
-  months caught) but precision is low. For an impairment *monitoring* system a
-  conservative bias is the preferable failure direction, but it is a bias.
-  Candidate fix (parking lot): spread *change* rather than level as a feature.
+- **What the low argmax precision really is.** It is *structural*, not a feature
+  bug: an unsupervised 3-state HMM splits history into comparably-sized states,
+  but true crisis is rare (~16% of months), so argmax over-calls it. We first
+  hypothesised the credit-spread *level* was the cause and switched to its
+  6-month *change* (this model); that improved out-of-sample COVID detection to
+  {lag_2020_oos}-month lag but did **not** lift argmax precision — confirming the
+  cause is the unsupervised-vs-rare-label mismatch, not the feature. The honest
+  fix is to use the probability with a threshold (§4b), which is how the engine
+  already consumes the model; a genuinely higher-precision *argmax* model would
+  need supervised or semi-supervised calibration (parking lot).
+- **Tradeoff from the change feature:** faster COVID detection but slower 2008
+  detection (the 2007-08 widening was gradual; a 6-month change reacts at the
+  acute Lehman jump). Reported, not hidden.
 - Labels in 2011 and 2022 are judgment calls (not NBER); accuracy there
   measures agreement with our labeling, not truth.
 - Smoothed probabilities (§1) use future data and overstate real-time skill;

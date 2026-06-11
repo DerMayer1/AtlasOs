@@ -139,12 +139,43 @@ returns the answer. The heavy work (engine Monte Carlo) is already fast and the
 LLM calls are short; an async orchestration job is a clean future enhancement
 but would double the surface for no v1 benefit.
 
+## ADR-015 — HMM spread-change feature; the precision ceiling is structural
+
+We hypothesised that the low crisis *precision* (many expansion months called
+crisis) came from the credit-spread *level* persisting after the acute phase,
+and switched the feature to its 6-month *change* (model `hmm3sc`). Measured
+result: out-of-sample COVID detection improved to a 0-month causal lag, but
+argmax precision did **not** improve, and a causal P(crisis) threshold sweep is
+flat (saturated probabilities) — see validation_report.md §4/§4b. Conclusion:
+the precision ceiling is structural — an unsupervised 3-state HMM splits history
+into comparably-sized states while true crisis is rare (~16% of months), so it
+*confidently* over-calls. We kept the change feature (better real-time COVID
+detection, principled consistency with the unemployment-change feature) but the
+real fix is supervised/semi-supervised calibration of the crisis state, which is
+in the parking lot. Documented, not dressed up (PRD risk #1).
+
+## ADR-016 — Stress shocks calibrated from reference NBER windows (closes Q2)
+
+`scripts/calibrate_shocks.py` estimates the per-regime EBITDA shock as a
+regime-dummy regression of FRED corporate-profit (`CP`) YoY growth, writing
+`shock_calibration.json` (loaded by the engine; a hardcoded fallback remains).
+Regimes for calibration are the **reference NBER+ windows, not the model's own
+HMM output** — calibrating the model's shock off its own over-broad crisis state
+is circular and, when first tried, produced a *positive* crisis mean (the broad
+crisis state absorbs high-rebound recovery quarters). PRD Q2 is closed: the
+coefficients now have a historical origin, not a chosen one. Caveats recorded in
+the report and limitations: `CP` is aggregate (its std understates single-name
+dispersion — mean well identified, std a lower bound) and the mild crisis mean
+is pulled up by the 2011 stress-without-recession window and nominal growth.
+
 ## Parking lot
 
 - Citation locator granularity (PRD Q1) — decide in Phase 3.
 - LLM model choice for prod vs evals (PRD Q3) — decide in Phase 3.
 - Demo data for public deploy (PRD Q4) — decide in Phase 4.
 - Snapshot retention policy (PRD Q5) — post-v1.
-- HMM calibration (PRD Q2, still open): spread *change* feature to cut the
-  post-recession false-positive bias; daily-frequency detection for sub-month
-  lag resolution; historical regression for the stress-shock coefficients.
+- HMM crisis precision: supervised / semi-supervised calibration of the crisis
+  state (the structural fix; ADR-015), plus daily-frequency detection for
+  sub-month lag resolution.
+- Shock std: single-company cross-sectional dispersion (the calibrated `CP` std
+  is an aggregate lower bound; ADR-016).

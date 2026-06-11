@@ -7,7 +7,7 @@ regenerates byte-comparable numbers from the same snapshot).*
 |---|---|
 | Snapshot | `snap_6f94201ca0f2ebe4` |
 | Data period | 1990-01-31 → 2026-05-31 (monthly) |
-| Model | 3-state diagonal-Gaussian HMM, `hmm3-mc-0.2` |
+| Model | 3-state diagonal-Gaussian HMM (spread-change feature), `hmm3sc-mc-cal-0.3` |
 | Evaluation window | 2000-01 → 2026-05-31 |
 
 Reference labels are NBER recessions plus Fed hiking cycles (see
@@ -21,38 +21,62 @@ Rows = reference label, columns = model prediction, values = months.
 
 | label \\ pred | expansion | tightening | crisis |
 |---|---|---|---|
-| expansion | 74 | 11 | 113 |
-| tightening | 51 | 14 | 4 |
-| crisis | 10 | 0 | 39 |
+| expansion | 73 | 12 | 113 |
+| tightening | 48 | 14 | 7 |
+| crisis | 9 | 9 | 31 |
 
-Accuracy: **40.2%** (z-score baseline from Phase 0: 49.4%).
+Accuracy: **37.3%** (z-score baseline from Phase 0: 49.4%).
 
 ## 2. Detection lag per crisis window
 
-- Crisis starting 2001-03: detected after **7 month(s)**
-- Crisis starting 2008-01: detected after **2 month(s)**
+- Crisis starting 2001-03: detected after **8 month(s)**
+- Crisis starting 2008-01: detected after **9 month(s)**
 - Crisis starting 2011-08: detected after **0 month(s)**
 - Crisis starting 2020-02: detected after **1 month(s)**
 
-Out-of-sample causal detection of COVID (2020-02): **2 month(s)**.
+Out-of-sample causal detection of COVID (2020-02): **0 month(s)**.
 
 ## 3. Out-of-sample — train 2010–2018, evaluate 2019–2024 (causal)
 
 | label \\ pred | expansion | tightening | crisis |
 |---|---|---|---|
-| expansion | 11 | 27 | 11 |
-| tightening | 3 | 16 | 0 |
-| crisis | 0 | 2 | 2 |
+| expansion | 22 | 0 | 27 |
+| tightening | 2 | 6 | 11 |
+| crisis | 2 | 0 | 2 |
 
-Out-of-sample accuracy: **40.3%**.
+Out-of-sample accuracy: **41.7%**.
 
 ## 4. Naive benchmark comparison (crisis detection, 2000→present)
 
 |  | precision | recall |
 |---|---|---|
-| HMM (smoothed argmax) | 0.250 | 0.796 |
+| HMM (smoothed argmax) | 0.205 | 0.633 |
 | VIX > 30 | 0.786 | 0.449 |
 | BAA-AAA spread > 1.2pp | 0.627 | 0.755 |
+
+The HMM row uses the argmax label, which is an unfair operating point: argmax
+over three comparably-sized unsupervised states over-calls a rare label
+(crisis is ~16% of months) by construction, so precision is low. The engine
+does **not** use argmax — it consumes the crisis probability. §4b is the
+operating-point that matters.
+
+## 4b. HMM by P(crisis) threshold (causal / filtered — how the engine uses it)
+
+|  | precision | recall | months_flagged |
+|---|---|---|---|
+| 0.3 | 0.196 | 0.633 | 158.000 |
+| 0.5 | 0.192 | 0.612 | 156.000 |
+| 0.7 | 0.194 | 0.612 | 155.000 |
+| 0.9 | 0.192 | 0.592 | 151.000 |
+
+The rows barely move from threshold 0.3 to 0.9: the filtered probabilities are
+**saturated** (near 0 or 1), so a threshold does not separate the false
+positives. The model is not *marginally* over-calling crisis — it is
+*confidently* assigning P(crisis)≈1 to ~150 months, most of them expansion. That
+is the strongest evidence the precision ceiling is **structural** (an
+unsupervised 3-state split vs. a rare label), and that neither the spread-change
+feature nor a probability threshold fixes it. The honest fix is supervised or
+semi-supervised calibration of the crisis state (parking lot, DECISIONS.md).
 
 ## 5. Sensitivity — crisis EBITDA shock parameters
 
@@ -62,13 +86,21 @@ near zero, which would make the grid flat), varying the crisis shock:
 
 |  | sigma=0.1 | sigma=0.2 | sigma=0.3 |
 |---|---|---|---|
-| mu=-0.25 | 0.656 | 0.599 | 0.551 |
-| mu=-0.15 | 0.611 | 0.531 | 0.494 |
-| mu=-0.05 | 0.462 | 0.439 | 0.431 |
+| mu=-0.25 | 0.582 | 0.525 | 0.477 |
+| mu=-0.15 | 0.536 | 0.457 | 0.420 |
+| mu=-0.05 | 0.388 | 0.364 | 0.357 |
 
-The production values (mu=-0.15, sigma=0.2) sit in the
-middle of this grid. They remain literature-informed placeholders pending
-historical calibration (PRD Q2 — still open; tracked in DECISIONS.md).
+The production crisis values (mu=-0.021, sigma=0.184)
+are now **calibrated from history**, not chosen (PRD Q2 closed): a regime-dummy
+regression of corporate-profit (FRED `CP`) year-over-year growth on the
+reference NBER+ regime windows — see `scripts/calibrate_shocks.py` and
+`shock_calibration.json`. Two honest caveats: (1) `CP` is aggregate, so its
+volatility understates single-company EBITDA dispersion — the regime-conditional
+*mean* is well identified, the *std* is a lower bound; (2) the mild crisis mean
+is pulled up by the 2011 stress-without-recession window (profits were still
+growing) and by nominal aggregate growth. The grid above shows P(impairment)
+stays materially sensitive to these, so the residual uncertainty is quantified,
+not hidden.
 
 ## 6. Figures
 
@@ -80,12 +112,19 @@ historical calibration (PRD Q2 — still open; tracked in DECISIONS.md).
 
 - The HMM is compared against trivially simple rules in §4 on purpose; where a
   naive rule wins on a metric, that is reported, not hidden.
-- The model's characteristic failure is **over-predicting crisis during
-  post-recession credit normalization** (2003, 2009-10, 2015-16): spreads stay
-  wide after the acute phase ends, so recall is high (39/49 crisis
-  months caught) but precision is low. For an impairment *monitoring* system a
-  conservative bias is the preferable failure direction, but it is a bias.
-  Candidate fix (parking lot): spread *change* rather than level as a feature.
+- **What the low argmax precision really is.** It is *structural*, not a feature
+  bug: an unsupervised 3-state HMM splits history into comparably-sized states,
+  but true crisis is rare (~16% of months), so argmax over-calls it. We first
+  hypothesised the credit-spread *level* was the cause and switched to its
+  6-month *change* (this model); that improved out-of-sample COVID detection to
+  0-month lag but did **not** lift argmax precision — confirming the
+  cause is the unsupervised-vs-rare-label mismatch, not the feature. The honest
+  fix is to use the probability with a threshold (§4b), which is how the engine
+  already consumes the model; a genuinely higher-precision *argmax* model would
+  need supervised or semi-supervised calibration (parking lot).
+- **Tradeoff from the change feature:** faster COVID detection but slower 2008
+  detection (the 2007-08 widening was gradual; a 6-month change reacts at the
+  acute Lehman jump). Reported, not hidden.
 - Labels in 2011 and 2022 are judgment calls (not NBER); accuracy there
   measures agreement with our labeling, not truth.
 - Smoothed probabilities (§1) use future data and overstate real-time skill;
