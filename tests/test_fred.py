@@ -64,6 +64,23 @@ def test_cache_written_and_merged(tmp_path):
     pd.testing.assert_series_equal(s1, s2)
 
 
+def test_offline_mode_reads_cache_without_network(tmp_path):
+    online = FredClient(tmp_path, transport=make_transport())
+    expected = online.get_series("fed_funds")
+    offline = FredClient(
+        tmp_path,
+        transport=httpx.MockTransport(lambda request: httpx.Response(503)),
+        offline=True,
+    )
+    pd.testing.assert_series_equal(offline.get_series("fed_funds"), expected)
+
+
+def test_offline_mode_fails_when_cache_is_missing(tmp_path):
+    client = FredClient(tmp_path, offline=True)
+    with pytest.raises(FredIngestionError, match="offline cache missing"):
+        client.get_series("fed_funds")
+
+
 def test_http_error_fails_loudly(tmp_path):
     transport = httpx.MockTransport(lambda r: httpx.Response(503))
     client = FredClient(tmp_path, transport=transport)
@@ -79,4 +96,12 @@ def test_malformed_payload_fails_loudly(tmp_path):
 
 
 def test_series_map_covers_required_columns():
-    assert set(SERIES) == {"fed_funds", "baa", "aaa", "t10y2y", "cpi_index", "unemployment"}
+    assert set(SERIES) == {
+        "fed_funds",
+        "baa",
+        "aaa",
+        "t10y2y",
+        "cpi_index",
+        "unemployment",
+        "vix",
+    }

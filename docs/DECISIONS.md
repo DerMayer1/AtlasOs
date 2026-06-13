@@ -168,14 +168,32 @@ the report and limitations: `CP` is aggregate (its std understates single-name
 dispersion — mean well identified, std a lower bound) and the mild crisis mean
 is pulled up by the 2011 stress-without-recession window and nominal growth.
 
+## ADR-017 — Crisis validation is supervised and walk-forward
+
+The HMM no longer serves as the final crisis classifier in validation. Its
+probabilities are retained as candidate features and as a benchmark, while a
+small L2-regularized logistic model is trained against a versioned binary
+target. The primary target uses strict NBER recession months; a broader stress
+definition is reported separately as sensitivity analysis.
+
+Every headline score is produced by expanding walk-forward folds. Feature
+normalization, HMM fitting, logistic fitting and threshold selection occur
+inside the training period only. CPI and unemployment are shifted one month to
+approximate publication delay. Thresholds maximize training precision subject
+to a 60% recall floor, and the report prioritizes PR-AUC, Brier score and false
+alerts per year over class-imbalanced accuracy.
+
+The logistic implementation is kept in NumPy rather than adding a second
+modelling dependency. Current revised FRED history still creates possible
+revision look-ahead; vintage ALFRED data is the next credibility upgrade.
+
 ## Parking lot
 
 - Citation locator granularity (PRD Q1) — decide in Phase 3.
 - LLM model choice for prod vs evals (PRD Q3) — decide in Phase 3.
 - Demo data for public deploy (PRD Q4) — decide in Phase 4.
 - Snapshot retention policy (PRD Q5) — post-v1.
-- HMM crisis precision: supervised / semi-supervised calibration of the crisis
-  state (the structural fix; ADR-015), plus daily-frequency detection for
-  sub-month lag resolution.
+- Crisis classification: beat the walk-forward logistic baseline, add ALFRED
+  vintages, and evaluate daily-frequency market features for sub-month lag.
 - Shock std: single-company cross-sectional dispersion (the calibrated `CP` std
   is an aggregate lower bound; ADR-016).
