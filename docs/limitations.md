@@ -12,15 +12,17 @@ Honesty is a feature. What this system does **not** yet do:
    narration, citation validation and prompt wiring — but not changes in the
    real model's behaviour. A live eval run needs a key and is manual.
 
-1. **The HMM is outperformed by naive rules on crisis precision, and this is
-   structural.** VIX>30 and a wide-spread rule both beat the HMM on precision.
-   We investigated (ADR-015): switching the spread feature from level to change
-   improved real-time COVID detection but did *not* lift precision, and a causal
-   threshold sweep is flat because the probabilities are saturated — the model
-   *confidently* over-calls crisis. The cause is unsupervised states (comparably
-   sized) vs. a rare label (~16% of months). The real fix is supervised/
-   semi-supervised calibration of the crisis state; published unmodified meanwhile
-   (PRD risk #1). High recall makes it a defensible *monitoring* bias.
+1. **The supervised crisis classifier is still a validation candidate.** The
+   primary report now uses expanding walk-forward tests and compares a
+   regularized logistic model against HMM, VIX and spread rules. HMM remains a
+   feature and benchmark because its unsupervised states over-call the rare
+   crisis class. The classifier must improve precision, recall, PR-AUC,
+   calibration and false-alert burden before it can replace HMM probabilities
+   inside the impairment engine.
+1b. **Historical FRED values are revised, not vintage observations.** CPI and
+   unemployment receive a one-month publication lag and all transforms are
+   backward-looking, but the cache still contains today's revised history.
+   ALFRED/vintage ingestion is required to remove revision look-ahead fully.
 2. **Detection lag resolves only to the month.** Macro data is monthly, so a
    "1-month lag" could be anywhere from 1 to ~30 days. Daily-frequency detection
    is parking-lot work.

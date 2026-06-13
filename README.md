@@ -81,17 +81,25 @@ make calibrate-shocks                                 # fit per-regime EBITDA sh
 make validation-report                                # regenerate docs/validation_report.md + figures
 ```
 
-Ingestion pulls five macro series from FRED's keyless `fredgraph` endpoint
+When network access is unavailable and the FRED cache is already populated:
+
+```powershell
+$env:ATLAS_VALIDATION_OFFLINE = "1"
+make validation-report
+```
+
+Ingestion pulls the core macro series plus VIX from FRED's keyless `fredgraph` endpoint
 (cached, incremental), freezes them as a hash-verified snapshot, and indexes it
-in Postgres. The regime model is a 3-state Gaussian HMM (`regime_model="hmm"`,
-the default, with a credit-spread *change* feature); the Phase 0 z-score
-classifier remains available as `regime_model="zscore"` and is the baseline in
-the validation report. The per-regime stress shocks are calibrated from
+in Postgres. The impairment engine uses a 3-state Gaussian HMM
+(`regime_model="hmm"`, with a credit-spread *change* feature); the Phase 0
+z-score classifier remains available as `regime_model="zscore"`. Model
+validation uses a separate supervised crisis classifier with expanding
+walk-forward tests, publication lags and comparisons against HMM, VIX and
+spread rules. The per-regime stress shocks are calibrated from
 corporate-profit history (`make calibrate-shocks` → `shock_calibration.json`).
 The report itself ([docs/validation_report.md](docs/validation_report.md)) is
-regenerated from a frozen snapshot — same snapshot, same numbers — and publishes
-the model's results honestly, including where naive benchmarks beat it and the
-finding that the crisis-precision ceiling is structural (§4b).
+regenerated from a frozen snapshot and publishes the out-of-sample results,
+including target sensitivity, calibration and false-alert burden.
 
 ## The agent: every claim cites its number (Phase 3)
 

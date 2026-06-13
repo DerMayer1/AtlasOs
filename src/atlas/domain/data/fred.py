@@ -31,9 +31,17 @@ SERIES = {
     "t10y2y": ("T10Y2Y", "daily"),
     "cpi_index": ("CPIAUCSL", "monthly"),
     "unemployment": ("UNRATE", "monthly"),
+    "vix": ("VIXCLS", "daily"),
 }
 
-MACRO_COLUMNS = ["fed_funds", "baa_aaa_spread", "t10y2y", "cpi_yoy", "unemployment"]
+MACRO_COLUMNS = [
+    "fed_funds",
+    "baa_aaa_spread",
+    "t10y2y",
+    "cpi_yoy",
+    "unemployment",
+    "vix",
+]
 
 # Daily-series history is fetched from this year onward (macro frame starts 1990;
 # the buffer absorbs alignment trimming).
@@ -50,10 +58,12 @@ class FredClient:
         cache_dir: str | Path,
         transport: httpx.BaseTransport | None = None,
         timeout: float = 30.0,
+        offline: bool = False,
     ) -> None:
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._client = httpx.Client(transport=transport, timeout=timeout, follow_redirects=True)
+        self.offline = offline
 
     def _fetch_csv(
         self, fred_id: str, start: str | None = None, end: str | None = None
@@ -109,9 +119,13 @@ class FredClient:
 
         if cache_file.exists():
             cached = pd.read_parquet(cache_file)[fred_id]
+            if self.offline:
+                return cached
             start = (cached.index.max() - timedelta(days=60)).strftime("%Y-%m-%d")
             fresh = self._fetch_csv(fred_id, start=start)
             series = pd.concat([cached[cached.index < fresh.index.min()], fresh])
+        elif self.offline:
+            raise FredIngestionError(f"offline cache missing for {fred_id}: {cache_file}")
         elif daily:
             chunks = []
             year = HISTORY_START_YEAR
@@ -131,7 +145,7 @@ class FredClient:
 
 
 def build_macro_frame(client: FredClient, start: str = "1990-01-01") -> pd.DataFrame:
-    """Monthly macro frame with the five P0 series. Fails loudly on gaps."""
+    """Monthly macro frame with the core macro series and VIX."""
     raw = {name: client.get_series(name) for name in SERIES}
 
     monthly: dict[str, pd.Series] = {}
@@ -146,6 +160,7 @@ def build_macro_frame(client: FredClient, start: str = "1990-01-01") -> pd.DataF
             "t10y2y": monthly["t10y2y"],
             "cpi_yoy": monthly["cpi_index"].pct_change(12) * 100.0,
             "unemployment": monthly["unemployment"],
+            "vix": monthly["vix"],
         }
     ).loc[start:]
 
