@@ -48,18 +48,27 @@ Non-negotiable principles (PRD §7.1):
 py -3.12 -m venv .venv
 .venv\Scripts\pip install -e .[dev]
 .venv\Scripts\pytest                            # full suite
-.venv\Scripts\python -m atlas.interfaces.cli seed   # demo snapshot + portfolio + API key
-.venv\Scripts\uvicorn atlas.interfaces.api.app:create_app --factory
+.venv\Scripts\python -m atlas.interfaces.cli demo
 ```
 
-Then (replace the key/ids printed by `seed`):
+Open http://127.0.0.1:8000. The explicit local demo command creates the
+synthetic snapshot and a browser-session API key automatically. Runs are stored
+and can be reopened from **Recent analyses** without executing the engine again.
+
+For direct API usage, seed credentials manually and start the regular server:
 
 ```powershell
+.venv\Scripts\python -m atlas.interfaces.cli seed
+.venv\Scripts\uvicorn atlas.interfaces.api.app:create_app --factory
 $h = @{ "X-API-Key" = "<api_key>" }
 Invoke-RestMethod -Method Post http://127.0.0.1:8000/analyses -Headers $h `
   -ContentType application/json -Body '{"engine":"impairment","portfolio_id":"<pf_id>"}'
 Invoke-RestMethod http://127.0.0.1:8000/analyses/<job_id> -Headers $h
 ```
+
+The regular server never exposes bootstrap credentials. The UI does not poll or
+rerun automatically: queued production jobs expose an explicit **Refresh
+status** action.
 
 ## Full system (Postgres + Redis + worker)
 
@@ -97,6 +106,11 @@ validation uses a separate supervised crisis classifier with expanding
 walk-forward tests, publication lags and comparisons against HMM, VIX and
 spread rules. The per-regime stress shocks are calibrated from
 corporate-profit history (`make calibrate-shocks` → `shock_calibration.json`).
+Company valuation uses positive EBITDA paths with shared macro/sector factors,
+company-specific residuals and stochastic bounded multiples. Every run
+publishes base/tightening/crisis distributions over one and three years,
+expected and tail impairment losses, cross-company value correlation,
+sensitivities, break-even points and separate debt/liquidity diagnostics.
 The report itself ([docs/validation_report.md](docs/validation_report.md)) is
 regenerated from a frozen snapshot and publishes the out-of-sample results,
 including target sensitivity, calibration and false-alert burden.

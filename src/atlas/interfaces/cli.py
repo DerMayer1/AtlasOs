@@ -55,12 +55,39 @@ def cmd_seed() -> None:
             id=f"pf_{uuid.uuid4().hex[:12]}",
             name="Demo Portfolio",
             companies=[
-                {"name": "Alpha Industrials", "ebitda": 120.0, "multiple": 8.0,
-                 "carrying_value": 900.0},
-                {"name": "Beta Logistics", "ebitda": 60.0, "multiple": 6.5,
-                 "carrying_value": 450.0},
-                {"name": "Gamma Health", "ebitda": 200.0, "multiple": 11.0,
-                 "carrying_value": 2400.0},
+                {
+                    "name": "Alpha Industrials",
+                    "sector": "industrials",
+                    "ebitda": 120.0,
+                    "multiple": 8.0,
+                    "carrying_value": 900.0,
+                    "debt": 420.0,
+                    "cash": 90.0,
+                    "debt_due_1y": 80.0,
+                },
+                {
+                    "name": "Beta Logistics",
+                    "sector": "logistics",
+                    "ebitda": 60.0,
+                    "multiple": 6.5,
+                    "carrying_value": 450.0,
+                    "ebitda_volatility": 0.38,
+                    "debt": 310.0,
+                    "cash": 35.0,
+                    "debt_due_1y": 95.0,
+                },
+                {
+                    "name": "Gamma Health",
+                    "sector": "healthcare",
+                    "ebitda": 200.0,
+                    "multiple": 11.0,
+                    "carrying_value": 2400.0,
+                    "ebitda_volatility": 0.22,
+                    "macro_sensitivity": 0.75,
+                    "debt": 650.0,
+                    "cash": 180.0,
+                    "debt_due_1y": 70.0,
+                },
             ],
         )
         session.add(portfolio)
@@ -108,12 +135,24 @@ def cmd_ingest() -> None:
     print(f"rows        : {manifest.tables[0].rows}")
 
 
+def cmd_demo(port: int) -> None:
+    """Run the complete local product flow with explicit demo bootstrap."""
+    import uvicorn
+
+    from atlas.interfaces.api.app import create_app
+
+    settings = get_settings().model_copy(update={"demo_mode": True})
+    uvicorn.run(create_app(settings), host="127.0.0.1", port=port)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="atlas")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("init-db")
     sub.add_parser("seed")
     sub.add_parser("ingest")
+    demo = sub.add_parser("demo")
+    demo.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
 
     if args.command == "init-db":
@@ -122,6 +161,8 @@ def main(argv: list[str] | None = None) -> int:
         cmd_seed()
     elif args.command == "ingest":
         cmd_ingest()
+    elif args.command == "demo":
+        cmd_demo(args.port)
     return 0
 
 

@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     # Dev convenience: create tables directly for SQLite. Postgres uses Alembic.
     auto_create_schema: bool = True
     job_max_tries: int = 3
+    # Explicit local-only mode. Enables the unauthenticated demo bootstrap
+    # endpoint used by `python -m atlas.interfaces.cli demo`.
+    demo_mode: bool = False
     # Agent LLM. Empty key -> NullLLMClient -> graceful degradation (deterministic
     # planning + numbers-only narration). Set ATLAS_ANTHROPIC_API_KEY for full mode.
     anthropic_api_key: str = ""
