@@ -152,7 +152,7 @@
             <div class="is-hidden" id="results">
               <section class="result-summary result-surface">
                 <div class="primary-metric">
-                  <span>Portfolio mean impairment probability</span>
+                  <span>Base 1-year mean impairment probability</span>
                   <strong id="portfolio-risk">—</strong>
                   <small id="portfolio-count">—</small>
                 </div>
@@ -161,6 +161,8 @@
                   <div><dt>Snapshot</dt><dd id="snapshot-id">—</dd></div>
                   <div><dt>Model</dt><dd id="model-version">—</dd></div>
                   <div><dt>Status</dt><dd id="analysis-status">—</dd></div>
+                  <div><dt>Expected loss</dt><dd id="expected-loss">—</dd></div>
+                  <div><dt>Loss P95</dt><dd id="loss-p95">—</dd></div>
                 </dl>
               </section>
 
@@ -176,8 +178,29 @@
 
                   <div class="section-heading compact company-risk-heading">
                     <div>
+                      <h2>Scenario loss distribution</h2>
+                      <p>Controlled base, tightening and crisis comparisons.</p>
+                    </div>
+                  </div>
+                  <div class="risk-table-wrap">
+                    <table class="risk-table">
+                      <thead>
+                        <tr>
+                          <th>Scenario</th>
+                          <th>Horizon</th>
+                          <th>Weighted probability</th>
+                          <th>Expected loss</th>
+                          <th>Loss P95</th>
+                        </tr>
+                      </thead>
+                      <tbody id="scenario-rows"></tbody>
+                    </table>
+                  </div>
+
+                  <div class="section-heading compact company-risk-heading">
+                    <div>
                       <h2>Company impairment risk</h2>
-                      <p>Enterprise-value distribution by company.</p>
+                      <p>Recoverable-amount distribution for the base 1-year case.</p>
                     </div>
                   </div>
                   <div class="risk-table-wrap">
@@ -186,8 +209,8 @@
                         <tr>
                           <th>Company</th>
                           <th>Probability</th>
-                          <th>EV mean</th>
-                          <th>EV P05–P95</th>
+                          <th>Recoverable mean</th>
+                          <th>Recoverable P05–P95</th>
                         </tr>
                       </thead>
                       <tbody id="risk-rows"></tbody>

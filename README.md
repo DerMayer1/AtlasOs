@@ -106,6 +106,11 @@ validation uses a separate supervised crisis classifier with expanding
 walk-forward tests, publication lags and comparisons against HMM, VIX and
 spread rules. The per-regime stress shocks are calibrated from
 corporate-profit history (`make calibrate-shocks` → `shock_calibration.json`).
+Company valuation uses positive EBITDA paths with shared macro/sector factors,
+company-specific residuals and stochastic bounded multiples. Every run
+publishes base/tightening/crisis distributions over one and three years,
+expected and tail impairment losses, cross-company value correlation,
+sensitivities, break-even points and separate debt/liquidity diagnostics.
 The report itself ([docs/validation_report.md](docs/validation_report.md)) is
 regenerated from a frozen snapshot and publishes the out-of-sample results,
 including target sensitivity, calibration and false-alert burden.

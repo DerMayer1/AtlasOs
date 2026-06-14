@@ -4,9 +4,57 @@ const state = {
   currentJobId: sessionStorage.getItem("atlas_current_job") || null,
   currentResult: null,
   companies: [
-    { name: "Alpha Industrials", ebitda: 120, multiple: 8, carrying_value: 900 },
-    { name: "Beta Logistics", ebitda: 60, multiple: 6.5, carrying_value: 450 },
-    { name: "Gamma Health", ebitda: 200, multiple: 11, carrying_value: 2400 },
+    {
+      name: "Alpha Industrials",
+      sector: "industrials",
+      ebitda: 120,
+      multiple: 8,
+      carrying_value: 900,
+      ebitda_volatility: 0.3,
+      multiple_floor: 4.4,
+      multiple_ceiling: 10,
+      macro_sensitivity: 1,
+      sector_sensitivity: 1,
+      multiple_volatility: 0.18,
+      debt: 420,
+      cash: 90,
+      debt_due_1y: 80,
+      interest_rate: 0.08,
+    },
+    {
+      name: "Beta Logistics",
+      sector: "logistics",
+      ebitda: 60,
+      multiple: 6.5,
+      carrying_value: 450,
+      ebitda_volatility: 0.38,
+      multiple_floor: 3.6,
+      multiple_ceiling: 8.1,
+      macro_sensitivity: 1.15,
+      sector_sensitivity: 1.2,
+      multiple_volatility: 0.22,
+      debt: 310,
+      cash: 35,
+      debt_due_1y: 95,
+      interest_rate: 0.09,
+    },
+    {
+      name: "Gamma Health",
+      sector: "healthcare",
+      ebitda: 200,
+      multiple: 11,
+      carrying_value: 2400,
+      ebitda_volatility: 0.22,
+      multiple_floor: 7,
+      multiple_ceiling: 13.5,
+      macro_sensitivity: 0.75,
+      sector_sensitivity: 0.8,
+      multiple_volatility: 0.14,
+      debt: 650,
+      cash: 180,
+      debt_due_1y: 70,
+      interest_rate: 0.065,
+    },
   ],
 };
 
@@ -45,6 +93,8 @@ function escapeText(value) {
 function renderCompanies() {
   elements.companyRows.replaceChildren();
   state.companies.forEach((company, index) => {
+    const entry = document.createElement("article");
+    entry.className = "company-entry";
     const row = document.createElement("div");
     row.className = "company-row";
     row.dataset.index = String(index);
@@ -86,7 +136,51 @@ function renderCompanies() {
       renderCompanies();
     });
     row.append(remove);
-    elements.companyRows.append(row);
+
+    const advanced = document.createElement("details");
+    advanced.className = "company-profile";
+    const summary = document.createElement("summary");
+    summary.textContent = "Financial risk profile";
+    advanced.append(summary);
+
+    const grid = document.createElement("div");
+    grid.className = "company-profile-grid";
+    const advancedFields = [
+      ["sector", "text", "Sector", "e.g. industrials", null],
+      ["ebitda_volatility", "number", "EBITDA volatility", "0.30", "0.01"],
+      ["multiple_floor", "number", "Multiple floor", "4.0", "0.1"],
+      ["multiple_ceiling", "number", "Multiple ceiling", "10.0", "0.1"],
+      ["macro_sensitivity", "number", "Macro sensitivity", "1.0", "0.05"],
+      ["sector_sensitivity", "number", "Sector sensitivity", "1.0", "0.05"],
+      ["multiple_volatility", "number", "Multiple volatility", "0.18", "0.01"],
+      ["debt", "number", "Gross debt", "0", "0.01"],
+      ["cash", "number", "Cash", "0", "0.01"],
+      ["debt_due_1y", "number", "Debt due in 1 year", "0", "0.01"],
+      ["interest_rate", "number", "Interest rate", "0.08", "0.005"],
+    ];
+    advancedFields.forEach(([key, type, labelText, placeholder, step]) => {
+      const label = document.createElement("label");
+      label.className = "field";
+      const caption = document.createElement("span");
+      caption.textContent = labelText;
+      const input = document.createElement("input");
+      input.type = type;
+      input.value = escapeText(company[key] ?? "");
+      input.placeholder = placeholder;
+      if (type === "number") {
+        input.min = "0";
+        input.step = step;
+      }
+      input.addEventListener("input", () => {
+        state.companies[index][key] =
+          type === "number" ? Number(input.value) : input.value;
+      });
+      label.append(caption, input);
+      grid.append(label);
+    });
+    advanced.append(grid);
+    entry.append(row, advanced);
+    elements.companyRows.append(entry);
   });
 }
 
@@ -324,6 +418,10 @@ function money(value) {
   }).format(Number(value));
 }
 
+function optionalMoney(value) {
+  return value == null ? "—" : money(value);
+}
+
 function renderResult(analysis) {
   const result = analysis.result;
   elements.emptyState.classList.add("is-hidden");
@@ -338,9 +436,27 @@ function renderResult(analysis) {
   document.querySelector("#snapshot-id").textContent = analysis.snapshot_id;
   document.querySelector("#model-version").textContent = result.model_version;
   document.querySelector("#analysis-status").textContent = analysis.status;
+  document.querySelector("#expected-loss").textContent = optionalMoney(
+    result.metrics.portfolio_expected_impairment_loss,
+  );
+  document.querySelector("#loss-p95").textContent = optionalMoney(
+    result.metrics.portfolio_loss_p95,
+  );
 
   renderRegimes(result.metrics);
   loadCompanyScores(analysis.job_id);
+  if (result.artifacts.some((artifact) => artifact.name === "portfolio_scenarios.csv")) {
+    loadPortfolioScenarios(analysis.job_id);
+  } else {
+    const rows = document.querySelector("#scenario-rows");
+    rows.replaceChildren();
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 5;
+    cell.textContent = "Scenario distributions are available from Engine 1.0 onward.";
+    row.append(cell);
+    rows.append(row);
+  }
   renderArtifacts(result.artifacts, analysis.job_id);
 
   const citation =
@@ -377,6 +493,44 @@ function renderRegimes(metrics) {
   });
 }
 
+async function loadPortfolioScenarios(jobId) {
+  const rows = document.querySelector("#scenario-rows");
+  rows.replaceChildren();
+  try {
+    const response = await api(`/artifacts/${jobId}/portfolio_scenarios.csv`, {
+      headers: { Accept: "text/csv" },
+    });
+    const csv = await response.text();
+    parseCsv(csv).forEach((scenario) => {
+      const [name, horizon] = scenario.case.split("|");
+      const row = document.createElement("tr");
+      const cells = [
+        name[0].toUpperCase() + name.slice(1),
+        horizon,
+        percent(scenario.carrying_weighted_p_impairment),
+        money(scenario.expected_impairment_loss),
+        money(scenario.loss_p95),
+      ];
+      cells.forEach((value, index) => {
+        const cell = document.createElement("td");
+        cell.textContent = value;
+        if (index === 2) {
+          cell.className = "risk-value";
+        }
+        row.append(cell);
+      });
+      rows.append(row);
+    });
+  } catch (error) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 5;
+    cell.textContent = `Unable to load scenarios: ${error.message}`;
+    row.append(cell);
+    rows.append(row);
+  }
+}
+
 async function loadCompanyScores(jobId) {
   const rows = document.querySelector("#risk-rows");
   rows.replaceChildren();
@@ -390,8 +544,10 @@ async function loadCompanyScores(jobId) {
       const cells = [
         score.company,
         percent(score.p_impairment),
-        money(score.ev_mean),
-        `${money(score.ev_p05)}–${money(score.ev_p95)}`,
+        money(score.recoverable_mean ?? score.ev_mean),
+        `${money(score.recoverable_p05 ?? score.ev_p05)}–${money(
+          score.recoverable_p95 ?? score.ev_p95,
+        )}`,
       ];
       cells.forEach((value, index) => {
         const cell = document.createElement("td");
@@ -510,16 +666,43 @@ elements.keyForm.addEventListener("submit", (event) => {
 elements.addCompany.addEventListener("click", () => {
   state.companies.push({
     name: "",
+    sector: "general",
     ebitda: 100,
     multiple: 8,
     carrying_value: 800,
+    ebitda_volatility: 0.3,
+    multiple_floor: 4.4,
+    multiple_ceiling: 10,
+    macro_sensitivity: 1,
+    sector_sensitivity: 1,
+    multiple_volatility: 0.18,
+    debt: 0,
+    cash: 0,
+    debt_due_1y: 0,
+    interest_rate: 0.08,
   });
   renderCompanies();
 });
 
 elements.clearForm.addEventListener("click", () => {
   state.companies = [
-    { name: "Alpha Industrials", ebitda: 120, multiple: 8, carrying_value: 900 },
+    {
+      name: "Alpha Industrials",
+      sector: "industrials",
+      ebitda: 120,
+      multiple: 8,
+      carrying_value: 900,
+      ebitda_volatility: 0.3,
+      multiple_floor: 4.4,
+      multiple_ceiling: 10,
+      macro_sensitivity: 1,
+      sector_sensitivity: 1,
+      multiple_volatility: 0.18,
+      debt: 420,
+      cash: 90,
+      debt_due_1y: 80,
+      interest_rate: 0.08,
+    },
   ];
   elements.portfolioName.value = "Atlas Sample Portfolio";
   elements.nSims.value = "10000";

@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import select, text
 
+from atlas.domain.engines.impairment.models import CompanyFinancialProfile
 from atlas.interfaces.api.auth import SCOPE_READ, SCOPE_RUN, create_api_key, require_scope
 from atlas.interfaces.api.container import Container, build_container
 from atlas.platform.audit.snapshots import SnapshotNotFoundError
@@ -40,11 +41,8 @@ def _container(request: Request) -> Container:
 # --- request/response models -------------------------------------------------
 
 
-class CompanyIn(BaseModel):
-    name: str
-    ebitda: float = Field(gt=0)
-    multiple: float = Field(gt=0, default=8.0)
-    carrying_value: float = Field(gt=0)
+class CompanyIn(CompanyFinancialProfile):
+    pass
 
 
 class PortfolioIn(BaseModel):

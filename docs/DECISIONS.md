@@ -187,6 +187,23 @@ The logistic implementation is kept in NumPy rather than adding a second
 modelling dependency. Current revised FRED history still creates possible
 revision look-ahead; vintage ALFRED data is the next credibility upgrade.
 
+## ADR-018 — Impairment uses a joint factor model; debt remains a separate lens
+
+The first impairment model applied one common normal EBITDA shock and a fixed
+multiple to every company. Engine 1.0 replaces that bridge with positive
+multiplicative EBITDA paths, stochastic bounded multiples and shared market and
+sector factors plus company-specific residuals. This creates explicit,
+non-perfect cross-company dependence and controlled base/tightening/crisis
+comparisons over one- and three-year horizons.
+
+The model publishes expected impairment loss, tail loss, scenario distributions,
+value correlations, sensitivities and break-even points. Debt, cash, interest
+coverage and near-term liquidity are published separately as resilience
+diagnostics. They do not enter the accounting impairment test mechanically:
+recoverable amount remains enterprise value versus carrying value. Correlation
+and company-volatility defaults are transparent structural assumptions until
+company-level calibration data is available.
+
 ## Parking lot
 
 - Citation locator granularity (PRD Q1) — decide in Phase 3.

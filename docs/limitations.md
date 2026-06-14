@@ -34,7 +34,18 @@ Honesty is a feature. What this system does **not** yet do:
    Cross-sectional dispersion calibration is future work.
 4. **No scheduler or alerts.** Analyses and agent runs are on demand via the
    API; recurring analysis and threshold alerts are Phase 4.
-5. **Valuation is a single-multiple model.** EV = EBITDA x multiple over a
-   one-year horizon; no DCF, no WACC, no multi-year paths yet.
+5. **Valuation is still market-multiple based.** The engine now models joint
+   EBITDA and multiple distributions, macro/sector/company factors, explicit
+   cross-company dependence and 1/3-year scenarios. It still does not implement
+   a DCF, WACC term structure, tax effects or cash-flow conversion.
+5b. **Correlation inputs are structural assumptions, not estimated matrices.**
+   Shared market and sector variance shares create non-perfect dependence
+   between companies, but the defaults are not yet calibrated from
+   company-level histories. Users should override volatility and sensitivities
+   when defensible company data exists.
+5c. **Debt diagnostics are deliberately separate from accounting impairment.**
+   Net leverage, interest coverage and near-term liquidity are reported as
+   financial resilience indicators. They do not mechanically alter recoverable
+   amount, which remains EBITDA x stochastic multiple versus carrying value.
 6. **Single tenant.** API keys with read/run scopes exist; organizations and
    billing are out of scope for v1 (PRD NG4).

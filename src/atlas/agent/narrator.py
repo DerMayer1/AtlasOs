@@ -112,6 +112,23 @@ def template_narrative(results: list[AnalysisResult], store: ArtifactStore) -> s
                 sentence += f" across {int(n.value)} companies {n.token}"
             parts.append(sentence + ".")
 
+        expected_loss = values.get("portfolio_expected_impairment_loss")
+        expected_ratio = values.get("portfolio_expected_loss_ratio")
+        tail_loss = values.get("portfolio_loss_p95")
+        if expected_loss is not None and expected_ratio is not None:
+            sentence = (
+                "Base one-year expected impairment loss is "
+                f"{expected_loss.value:.1f} {expected_loss.token}, equal to "
+                f"{expected_ratio.value * 100:.1f}% {expected_ratio.token} "
+                "of carrying value"
+            )
+            if tail_loss is not None:
+                sentence += (
+                    ", while the adverse P95 loss is "
+                    f"{tail_loss.value:.1f} {tail_loss.token}"
+                )
+            parts.append(sentence + ".")
+
         exposures = sorted(
             (
                 (loc.split("@")[1], v)
