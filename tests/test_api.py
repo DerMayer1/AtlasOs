@@ -174,3 +174,63 @@ def test_health_unauthenticated(client_and_keys):
     assert body["status"] == "ok"
     assert body["checks"]["database"] == "ok"
     assert body["checks"]["queue"] == "in-process"
+
+
+def test_frontend_and_static_assets_are_served(client_and_keys):
+    client, *_ = client_and_keys
+    page = client.get("/")
+    assert page.status_code == 200
+    assert "Impairment analysis" in page.text
+
+    stylesheet = client.get("/static/styles.css")
+    script = client.get("/static/app.js")
+    assert stylesheet.status_code == 200
+    assert script.status_code == 200
+    assert "runAnalysis" in script.text
+
+
+def test_demo_bootstrap_is_disabled_by_default(client_and_keys):
+    client, *_ = client_and_keys
+    response = client.post("/demo/bootstrap")
+    assert response.status_code == 404
+
+
+def test_local_demo_bootstraps_and_lists_persisted_analysis(tmp_path):
+    settings = Settings(
+        database_url=f"sqlite:///{tmp_path / 'demo.db'}",
+        redis_url="",
+        data_dir=tmp_path / "data",
+        auto_create_schema=True,
+        demo_mode=True,
+    )
+    client = TestClient(create_app(settings))
+
+    bootstrap = client.post("/demo/bootstrap")
+    assert bootstrap.status_code == 200
+    body = bootstrap.json()
+    assert body["mode"] == "local-demo"
+    assert body["snapshot_id"].startswith("snap_")
+    assert "impairment" in body["capabilities"]
+
+    headers = {"X-API-Key": body["api_key"]}
+    portfolio = client.post("/portfolios", json=PORTFOLIO, headers=headers)
+    assert portfolio.status_code == 201
+
+    job = client.post(
+        "/analyses",
+        json={
+            "engine": "impairment",
+            "portfolio_id": portfolio.json()["portfolio_id"],
+            "params": {"n_sims": 100, "seed": 7},
+        },
+        headers=headers,
+    )
+    assert job.status_code == 202
+
+    history = client.get("/analyses", headers=headers)
+    assert history.status_code == 200
+    recent = history.json()["analyses"]
+    assert recent[0]["job_id"] == job.json()["job_id"]
+    assert recent[0]["portfolio_name"] == PORTFOLIO["name"]
+    assert recent[0]["status"] == "succeeded"
+    assert 0.0 <= recent[0]["portfolio_mean_p_impairment"] <= 1.0

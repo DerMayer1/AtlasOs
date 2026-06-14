@@ -7,24 +7,29 @@ POST /agent/ask, GET /artifacts/{run_id}/{name}, GET /health
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import select, text
 
-from atlas.interfaces.api.auth import SCOPE_READ, SCOPE_RUN, require_scope
+from atlas.interfaces.api.auth import SCOPE_READ, SCOPE_RUN, create_api_key, require_scope
 from atlas.interfaces.api.container import Container, build_container
 from atlas.platform.audit.snapshots import SnapshotNotFoundError
 from atlas.platform.db.models import AnalysisRow, PortfolioRow, SnapshotRow
 from atlas.platform.runtime.settings import Settings, get_settings
+
+STATIC_DIR = Path(__file__).with_name("static")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="Atlas", version="0.1.0")
     app.state.container = build_container(settings or get_settings())
     app.include_router(_router())
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return app
 
 
@@ -65,6 +70,49 @@ def _router():
     from fastapi import APIRouter
 
     router = APIRouter()
+
+    @router.get("/", include_in_schema=False)
+    def frontend():
+        return FileResponse(STATIC_DIR / "index.html")
+
+    @router.post("/demo/bootstrap", include_in_schema=False)
+    def demo_bootstrap(request: Request):
+        c = _container(request)
+        if not c.settings.demo_mode:
+            raise HTTPException(404, "local demo mode is not enabled")
+
+        with c.session_factory() as session:
+            latest = session.execute(
+                select(SnapshotRow).order_by(SnapshotRow.created_at.desc()).limit(1)
+            ).scalar_one_or_none()
+            if latest is None:
+                from atlas.domain.data.synthetic import make_macro_frame
+
+                manifest = c.snapshots.create(
+                    {"macro": make_macro_frame()},
+                    sources=["synthetic://local-demo"],
+                    period_start="2015-01",
+                    period_end="2024-12",
+                )
+                latest = SnapshotRow(
+                    snapshot_id=manifest.snapshot_id,
+                    manifest=manifest.model_dump(mode="json"),
+                )
+                session.add(latest)
+                session.commit()
+
+            _, token = create_api_key(
+                session,
+                name="local-browser-session",
+                scopes=[SCOPE_READ, SCOPE_RUN],
+            )
+
+        return {
+            "mode": "local-demo",
+            "api_key": token,
+            "snapshot_id": latest.snapshot_id,
+            "capabilities": sorted(c.registry.capabilities()),
+        }
 
     @router.post("/portfolios", status_code=201, dependencies=[require_scope(SCOPE_RUN)])
     def create_portfolio(body: PortfolioIn, request: Request):
@@ -138,6 +186,50 @@ def _router():
 
         await c.queue.enqueue_analysis(job_id)
         return {"job_id": job_id, "status": "queued"}
+
+    @router.get("/analyses", dependencies=[require_scope(SCOPE_READ)])
+    def list_analyses(
+        request: Request,
+        limit: int = Query(default=12, ge=1, le=100),
+    ):
+        c = _container(request)
+        with c.session_factory() as session:
+            rows = session.execute(
+                select(AnalysisRow)
+                .order_by(AnalysisRow.created_at.desc())
+                .limit(limit)
+            ).scalars().all()
+            portfolio_ids = {row.portfolio_id for row in rows if row.portfolio_id}
+            portfolios = (
+                session.execute(
+                    select(PortfolioRow).where(PortfolioRow.id.in_(portfolio_ids))
+                ).scalars().all()
+                if portfolio_ids
+                else []
+            )
+            portfolio_names = {row.id: row.name for row in portfolios}
+
+        analyses = []
+        for row in rows:
+            metric = None
+            if row.result:
+                metric = row.result.get("metrics", {}).get(
+                    "portfolio_mean_p_impairment"
+                )
+            analyses.append(
+                {
+                    "job_id": row.id,
+                    "portfolio_id": row.portfolio_id,
+                    "portfolio_name": portfolio_names.get(row.portfolio_id),
+                    "engine": row.engine,
+                    "snapshot_id": row.snapshot_id,
+                    "status": row.status,
+                    "portfolio_mean_p_impairment": metric,
+                    "created_at": row.created_at,
+                    "finished_at": row.finished_at,
+                }
+            )
+        return {"analyses": analyses}
 
     @router.get("/analyses/{analysis_id}", dependencies=[require_scope(SCOPE_READ)])
     def get_analysis(analysis_id: str, request: Request):
