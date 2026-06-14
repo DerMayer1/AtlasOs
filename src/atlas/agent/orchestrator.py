@@ -18,10 +18,16 @@ _OUT_OF_SCOPE = (
     "fx", "currency", "foreign exchange", "equity price", "stock price",
     "interest rate forecast", "options", "crypto", "bitcoin", "commodity",
 )
+# Evaluated before impairment because impairment also consumes macro regimes.
+_MACRO_MONITOR_HINTS = (
+    "macro", "regime", "cycle", "inflation", "credit spread", "yield curve",
+    "unemployment", "fed funds", "vix", "market stress", "macro alert",
+    "macro scenario", "tightening",
+)
 # Words that map to the impairment engine.
 _IMPAIRMENT_HINTS = (
     "impair", "impairment", "risk", "portfolio", "write-down", "writedown",
-    "valuation", "ebitda", "carrying", "regime", "scenario", "stress",
+    "valuation", "ebitda", "carrying", "scenario", "stress",
 )
 
 
@@ -84,6 +90,17 @@ def plan_deterministic(question: str, registry: EngineRegistry) -> Plan:
                 "Atlas does not cover that. Available capabilities: "
                 + "; ".join(f"{n} ({d})" for n, d in caps.items())
             ),
+        )
+
+    if "macro_monitor" in caps and any(term in q for term in _MACRO_MONITOR_HINTS):
+        return Plan(
+            question=question,
+            calls=[
+                PlannedCall(
+                    engine="macro_monitor",
+                    reason="macro-monitor keyword match (deterministic)",
+                )
+            ],
         )
 
     if "impairment" in caps and any(term in q for term in _IMPAIRMENT_HINTS):

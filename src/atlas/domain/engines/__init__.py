@@ -7,10 +7,12 @@ if TYPE_CHECKING:
 
 
 def build_registry() -> EngineRegistry:
-    """All available engines. Engine 2 (macro monitor) registers here in Phase 4."""
+    """Build the registry of available deterministic engines."""
     from atlas.domain.engines.impairment.engine import ImpairmentEngine
+    from atlas.domain.engines.macro_monitor.engine import MacroMonitorEngine
     from atlas.platform.runtime.registry import EngineRegistry
 
     registry = EngineRegistry()
     registry.register(ImpairmentEngine())
+    registry.register(MacroMonitorEngine())
     return registry

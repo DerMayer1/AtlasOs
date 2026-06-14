@@ -1,4 +1,4 @@
-# Known limitations (Phase 3)
+# Known limitations (Phase 4a)
 
 Honesty is a feature. What this system does **not** yet do:
 
@@ -32,8 +32,12 @@ Honesty is a feature. What this system does **not** yet do:
    so its volatility understates single-company EBITDA dispersion — the
    regime-conditional *mean* is well identified, the *std* is a floor.
    Cross-sectional dispersion calibration is future work.
-4. **No scheduler or alerts.** Analyses and agent runs are on demand via the
-   API; recurring analysis and threshold alerts are Phase 4.
+4. **Alerts are on demand, not delivered automatically.** The Macro Monitor
+   identifies level and momentum alerts inside each run, but there is no
+   scheduler, notification channel or recurring execution.
+4b. **Macro scenarios are references, not forecasts.** Tightening and crisis
+   levels are historical medians for periods assigned to those HMM states.
+   They provide transparent comparison anchors, not dated point forecasts.
 5. **Valuation is still market-multiple based.** The engine now models joint
    EBITDA and multiple distributions, macro/sector/company factors, explicit
    cross-company dependence and 1/3-year scenarios. It still does not implement

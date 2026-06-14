@@ -15,10 +15,11 @@ as a hard gate: any regression below 100% fails the build.
 Assertions are on **structured outcomes**, never on exact prose — that is what
 makes them stable regression detectors.
 
-- **Planning (5):** impairment questions phrased as risk / scenario / regime /
-  stress / valuation all route to the `impairment` engine.
+- **Planning (5):** impairment risk / scenario / stress / valuation questions
+  route to `impairment`; current macro-regime questions route to
+  `macro_monitor`.
 - **Refusals (5):** FX, crypto, equity-price, options and unrelated questions
-  are declined honestly, the refusal naming the real capabilities.
+  are declined honestly, the refusal naming both real capabilities.
 - **Narration + citations (6):** a compliant narrative validates and does not
   degrade; an uncited number is rejected, retried, then degraded to a valid
   numbers-only summary; a citation to a non-existent artifact degrades; the

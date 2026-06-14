@@ -54,6 +54,15 @@ def test_deterministic_planner_routes_impairment():
     assert plan.calls[0].engine == "impairment"
 
 
+def test_deterministic_planner_routes_macro_monitor():
+    plan = plan_deterministic(
+        "show the current macro regime and credit spread alerts",
+        build_registry(),
+    )
+    assert not plan.is_refusal
+    assert plan.calls[0].engine == "macro_monitor"
+
+
 def test_deterministic_planner_refuses_out_of_scope():
     plan = plan_deterministic("what's your fx forecast?", build_registry())
     assert plan.is_refusal
@@ -113,6 +122,15 @@ def test_no_llm_degrades_gracefully(wiring):
     assert answer.degraded
     assert answer.citations.valid
     assert answer.narrative
+
+
+def test_macro_monitor_flow_needs_no_portfolio(wiring):
+    svc, snap = _service(wiring, NullLLMClient())
+    answer = svc.ask("show the current macro regime", snap, {})
+    assert answer.executed[0].engine == "macro_monitor"
+    assert answer.executed[0].status == "succeeded"
+    assert answer.citations.valid
+    assert "Macro regime probabilities" in answer.narrative
 
 
 def test_refusal_is_not_degradation(wiring):

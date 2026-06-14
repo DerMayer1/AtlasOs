@@ -22,6 +22,8 @@ from atlas.agent.schemas import TokenUsage
 from atlas.platform.audit.artifacts import ArtifactStore
 from atlas.platform.contracts.schemas import AnalysisResult
 
+_NON_NARRATIVE_ARTIFACTS = {"regime_history.csv"}
+
 
 @dataclass
 class CitableValue:
@@ -38,6 +40,8 @@ class CitableValue:
 def citable_values(result: AnalysisResult, store: ArtifactStore) -> list[CitableValue]:
     out: list[CitableValue] = []
     for artifact in result.artifacts:
+        if artifact.name in _NON_NARRATIVE_ARTIFACTS:
+            continue
         path = store.open_path(artifact.artifact_id)
         if artifact.name == "metrics.json":
             data = json.loads(path.read_text())
@@ -100,6 +104,32 @@ def template_narrative(results: list[AnalysisResult], store: ArtifactStore) -> s
                 f"{name} {v.value * 100:.1f}% {v.token}" for name, v in regimes
             )
             parts.append(f"Macro regime probabilities: {regime_txt}.")
+
+        stress = values.get("stress_index")
+        breadth = values.get("stress_breadth")
+        alerts = values.get("n_alerts")
+        if stress is not None and breadth is not None:
+            sentence = (
+                "Composite macro stress is "
+                f"{stress.value:.2f} {stress.token}, with "
+                f"{breadth.value * 100:.1f}% {breadth.token} "
+                "of monitored indicators elevated"
+            )
+            if alerts is not None:
+                sentence += f" and {int(alerts.value)} active alerts {alerts.token}"
+            parts.append(sentence + ".")
+
+        next_regimes = [
+            (loc.removeprefix("p_next_regime_"), value)
+            for loc, value in values.items()
+            if loc.startswith("p_next_regime_")
+        ]
+        if next_regimes:
+            next_txt = ", ".join(
+                f"{name} {value.value * 100:.1f}% {value.token}"
+                for name, value in next_regimes
+            )
+            parts.append(f"One-month HMM transition probabilities: {next_txt}.")
 
         mean = values.get("portfolio_mean_p_impairment")
         n = values.get("n_companies")

@@ -19,7 +19,8 @@ src/atlas/
 ├── domain/
 │   ├── data/            # FRED ingestion (cached, incremental) + synthetic demo
 │   ├── engines/
-│   │   └── impairment/  # Engine 1: Monte Carlo + HMM regime model
+│   │   ├── impairment/  # Engine 1: joint portfolio impairment model
+│   │   └── macro_monitor/ # Engine 2: regimes, trends, alerts and scenarios
 │   └── validation/      # reference labels + metrics for the validation report
 ├── agent/               # orchestrator (question→plan), narrator (results→thesis),
 │   │                    # citation validator, trace store, evals/
@@ -64,6 +65,10 @@ $h = @{ "X-API-Key" = "<api_key>" }
 Invoke-RestMethod -Method Post http://127.0.0.1:8000/analyses -Headers $h `
   -ContentType application/json -Body '{"engine":"impairment","portfolio_id":"<pf_id>"}'
 Invoke-RestMethod http://127.0.0.1:8000/analyses/<job_id> -Headers $h
+
+# Macro Monitor does not require a portfolio.
+Invoke-RestMethod -Method Post http://127.0.0.1:8000/analyses -Headers $h `
+  -ContentType application/json -Body '{"engine":"macro_monitor"}'
 ```
 
 The regular server never exposes bootstrap credentials. The UI does not poll or
@@ -111,6 +116,10 @@ company-specific residuals and stochastic bounded multiples. Every run
 publishes base/tightening/crisis distributions over one and three years,
 expected and tail impairment losses, cross-company value correlation,
 sensitivities, break-even points and separate debt/liquidity diagnostics.
+The Macro Monitor independently publishes the current filtered regime,
+one-month transition probabilities, indicator trends, stress percentiles,
+alert drivers, snapshot comparisons and state-conditioned reference scenarios
+in a versioned `macro_state.json`.
 The report itself ([docs/validation_report.md](docs/validation_report.md)) is
 regenerated from a frozen snapshot and publishes the out-of-sample results,
 including target sensitivity, calibration and false-alert burden.
@@ -149,4 +158,5 @@ regression fails the build.
 | **1 — Living system** ✅ | FastAPI, Postgres + Alembic, ARQ/Redis queue, docker compose, API keys | `POST /analyses` → result via `GET` |
 | **2 — Credibility** ✅ | FRED ingestion, real snapshots, HMM, validation report (2008/2020/2022) | "Detection lag in 2020?" answerable with a number |
 | **3 — Differentiator** ✅ | Orchestrator, narrator with mandatory citations, trace store, eval suite in CI | Prompt change → CI catches regression |
-| 4 — Public proof | React frontend (clickable citations), Engine 2 (macro monitor), scheduler + alerts, deploy | A stranger uses it unaided via the link |
+| **4a — Macro monitor** ✅ | Engine 2: regime, trends, reference scenarios and on-demand alerts | Macro state is reproducible and independently callable |
+| 4b — Public proof | React frontend (clickable citations), scheduler, alert delivery, deploy | A stranger uses it unaided via the link |

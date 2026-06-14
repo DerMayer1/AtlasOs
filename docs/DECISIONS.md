@@ -204,6 +204,20 @@ recoverable amount remains enterprise value versus carrying value. Correlation
 and company-volatility defaults are transparent structural assumptions until
 company-level calibration data is available.
 
+## ADR-019 — Macro Monitor is a state monitor, not a market forecaster
+
+Engine 2 reuses the same causal filtered HMM as impairment and publishes a
+separate, versioned `macro_state.json`. It adds indicator level and momentum
+standardization, adverse percentiles, stress breadth, one-month probabilities
+from the fitted transition matrix, optional snapshot comparison and explicit
+alert evidence.
+
+Its base/tightening/crisis scenarios are state-conditioned historical medians.
+They are reference conditions for downstream analyses, not point forecasts.
+Alerts are calculated only when a run is explicitly requested; scheduling and
+notification delivery remain separate concerns. This keeps the engine
+deterministic, snapshot-bound and honest about what the model can infer.
+
 ## Parking lot
 
 - Citation locator granularity (PRD Q1) — decide in Phase 3.

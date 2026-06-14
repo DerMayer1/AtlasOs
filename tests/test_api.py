@@ -100,6 +100,24 @@ def test_unknown_engine_rejected_with_capabilities(client_and_keys):
     )
     assert resp.status_code == 422
     assert "impairment" in resp.json()["detail"]
+    assert "macro_monitor" in resp.json()["detail"]
+
+
+def test_macro_monitor_runs_without_portfolio(client_and_keys):
+    client, run_token, _, snapshot_id = client_and_keys
+    job = client.post(
+        "/analyses",
+        json={"engine": "macro_monitor", "snapshot_id": snapshot_id},
+        headers={"X-API-Key": run_token},
+    )
+    assert job.status_code == 202
+    status = client.get(
+        f"/analyses/{job.json()['job_id']}",
+        headers={"X-API-Key": run_token},
+    ).json()
+    assert status["status"] == "succeeded"
+    assert status["result"]["engine"] == "macro_monitor"
+    assert 0.0 <= status["result"]["metrics"]["stress_breadth"] <= 1.0
 
 
 def test_unknown_snapshot_rejected(client_and_keys):

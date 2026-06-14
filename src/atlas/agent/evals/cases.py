@@ -79,7 +79,8 @@ def _plans_engine(answer: AgentAnswer, engine: str) -> bool:
 
 
 def _refused_with_capabilities(answer: AgentAnswer) -> bool:
-    return answer.plan.is_refusal and "impairment" in (answer.plan.refusal_reason or "").lower()
+    reason = (answer.plan.refusal_reason or "").lower()
+    return answer.plan.is_refusal and "impairment" in reason and "macro" in reason
 
 
 CASES: list[EvalCase] = [
@@ -90,9 +91,9 @@ CASES: list[EvalCase] = [
     EvalCase("impairment_scenario", "How exposed is the portfolio to a 2022-style scenario?",
              make_responder(plan_engine="impairment"),
              lambda a: _plans_engine(a, "impairment"), "scenario phrasing routes to engine"),
-    EvalCase("impairment_regime", "Show the current macro regime probabilities.",
-             make_responder(plan_engine="impairment"),
-             lambda a: _plans_engine(a, "impairment"), "regime ask routes to engine"),
+    EvalCase("macro_regime", "Show the current macro regime probabilities.",
+             make_responder(plan_engine="macro_monitor"),
+             lambda a: _plans_engine(a, "macro_monitor"), "regime ask routes to macro monitor"),
     EvalCase("impairment_stress", "Stress test these holdings for a downturn.",
              make_responder(plan_engine="impairment"),
              lambda a: _plans_engine(a, "impairment"), "stress phrasing routes to engine"),
@@ -101,19 +102,29 @@ CASES: list[EvalCase] = [
              lambda a: _plans_engine(a, "impairment"), "valuation phrasing routes to engine"),
     # -- refusals: out-of-scope questions must be declined honestly -----------
     EvalCase("refuse_fx", "What's your EUR/USD forecast for next month?",
-             make_responder(refuse_text="Atlas has no FX engine. It covers impairment risk."),
+             make_responder(refuse_text=(
+                 "Atlas has no FX engine. It covers impairment risk and macro monitoring."
+             )),
              _refused_with_capabilities, "FX is out of scope -> honest refusal"),
     EvalCase("refuse_crypto", "Should I buy Bitcoin right now?",
-             make_responder(refuse_text="Atlas has no crypto engine. It covers impairment risk."),
+             make_responder(refuse_text=(
+                 "Atlas has no crypto engine. It covers impairment risk and macro monitoring."
+             )),
              _refused_with_capabilities, "crypto is out of scope -> honest refusal"),
     EvalCase("refuse_equity", "Predict next quarter's equity prices.",
-             make_responder(refuse_text="Atlas has no equity engine. It covers impairment risk."),
+             make_responder(refuse_text=(
+                 "Atlas has no equity engine. It covers impairment risk and macro monitoring."
+             )),
              _refused_with_capabilities, "equity prediction out of scope -> refusal"),
     EvalCase("refuse_options", "Price these options for me.",
-             make_responder(refuse_text="Atlas has no options engine. It covers impairment risk."),
+             make_responder(refuse_text=(
+                 "Atlas has no options engine. It covers impairment risk and macro monitoring."
+             )),
              _refused_with_capabilities, "options out of scope -> refusal"),
     EvalCase("refuse_unrelated", "What's the weather in Lisbon?",
-             make_responder(refuse_text="That is unrelated. Atlas covers impairment risk."),
+             make_responder(refuse_text=(
+                 "That is unrelated. Atlas covers impairment risk and macro monitoring."
+             )),
              _refused_with_capabilities, "unrelated question -> refusal with capabilities"),
     # -- narration + citation enforcement -------------------------------------
     EvalCase("cited_narrative_valid", "Summarise the portfolio impairment risk.",
@@ -137,7 +148,9 @@ CASES: list[EvalCase] = [
              lambda a: len(a.executed) == 1 and a.executed[0].status == "succeeded",
              "planned engine actually ran and produced artifacts"),
     EvalCase("trace_has_capabilities_on_refusal", "Forecast gold prices.",
-             make_responder(refuse_text="No commodity engine. Atlas covers impairment risk."),
-             lambda a: "impairment" in a.capabilities,
+             make_responder(refuse_text=(
+                 "No commodity engine. Atlas covers impairment risk and macro monitoring."
+             )),
+             lambda a: {"impairment", "macro_monitor"} <= set(a.capabilities),
              "refusal answer still advertises real capabilities"),
 ]
