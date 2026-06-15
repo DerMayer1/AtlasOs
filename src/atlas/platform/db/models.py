@@ -1,8 +1,8 @@
-"""Postgres is the source of truth (PRD R3). Payload columns are JSON so the
-platform stays domain-agnostic; the API layer interprets their shape.
+"""Postgres is the source of truth (PRD R3).
 
 org_id columns are nullable placeholders for multi-tenancy (PRD P2): present in
-the schema from day one, no logic implemented.
+the schema from day one, no logic implemented. Engine outputs remain JSON;
+portfolio financial inputs are normalized and versioned for reproducibility.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, Integer, String, Text
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from atlas.platform.contracts.schemas import utcnow
@@ -27,7 +27,72 @@ class PortfolioRow(Base):
     org_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     name: Mapped[str] = mapped_column(String(200))
     companies: Mapped[list[Any]] = mapped_column(JSON)
+    current_version_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PortfolioVersionRow(Base):
+    """Immutable header for one frozen set of portfolio assumptions."""
+
+    __tablename__ = "portfolio_versions"
+    __table_args__ = (
+        UniqueConstraint(
+            "portfolio_id",
+            "version_number",
+            name="uq_portfolio_versions_portfolio_number",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    portfolio_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("portfolios.id"),
+        index=True,
+    )
+    version_number: Mapped[int] = mapped_column(Integer)
+    portfolio_name: Mapped[str] = mapped_column(String(200))
+    input_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PortfolioCompanyInputRow(Base):
+    """Normalized, immutable financial input belonging to a portfolio version."""
+
+    __tablename__ = "portfolio_company_inputs"
+    __table_args__ = (
+        UniqueConstraint(
+            "portfolio_version_id",
+            "position",
+            name="uq_portfolio_company_inputs_version_position",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    portfolio_version_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("portfolio_versions.id"),
+        index=True,
+    )
+    position: Mapped[int] = mapped_column(Integer)
+    name: Mapped[str] = mapped_column(String(200))
+    sector: Mapped[str] = mapped_column(String(100))
+    geography: Mapped[str] = mapped_column(String(100))
+    ebitda: Mapped[float] = mapped_column(Float)
+    multiple: Mapped[float] = mapped_column(Float)
+    carrying_value: Mapped[float] = mapped_column(Float)
+    ebitda_margin: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ebitda_volatility: Mapped[float] = mapped_column(Float)
+    macro_sensitivity: Mapped[float] = mapped_column(Float)
+    sector_sensitivity: Mapped[float] = mapped_column(Float)
+    multiple_volatility: Mapped[float] = mapped_column(Float)
+    multiple_floor: Mapped[float | None] = mapped_column(Float, nullable=True)
+    multiple_ceiling: Mapped[float | None] = mapped_column(Float, nullable=True)
+    debt: Mapped[float] = mapped_column(Float)
+    cash: Mapped[float] = mapped_column(Float)
+    annual_interest_expense: Mapped[float | None] = mapped_column(Float, nullable=True)
+    interest_rate: Mapped[float] = mapped_column(Float)
+    debt_due_1y: Mapped[float] = mapped_column(Float)
 
 
 class AnalysisRow(Base):
@@ -36,6 +101,12 @@ class AnalysisRow(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)  # doubles as run_id
     org_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     portfolio_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    portfolio_version_id: Mapped[str | None] = mapped_column(
+        String(64),
+        ForeignKey("portfolio_versions.id"),
+        nullable=True,
+        index=True,
+    )
     engine: Mapped[str] = mapped_column(String(100))
     snapshot_id: Mapped[str] = mapped_column(String(100))
     params: Mapped[dict[str, Any]] = mapped_column(JSON)

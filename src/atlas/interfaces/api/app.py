@@ -6,6 +6,8 @@ POST /agent/ask, GET /artifacts/{run_id}/{name}, GET /health
 
 from __future__ import annotations
 
+import hashlib
+import json
 import uuid
 from pathlib import Path
 from typing import Any
@@ -13,14 +15,22 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
-from sqlalchemy import select, text
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import func, select, text
+from sqlalchemy.orm import Session
 
 from atlas.domain.engines.impairment.models import CompanyFinancialProfile
 from atlas.interfaces.api.auth import SCOPE_READ, SCOPE_RUN, create_api_key, require_scope
 from atlas.interfaces.api.container import Container, build_container
 from atlas.platform.audit.snapshots import SnapshotNotFoundError
-from atlas.platform.db.models import AnalysisRow, PortfolioRow, SnapshotRow
+from atlas.platform.contracts.schemas import utcnow
+from atlas.platform.db.models import (
+    AnalysisRow,
+    PortfolioCompanyInputRow,
+    PortfolioRow,
+    PortfolioVersionRow,
+    SnapshotRow,
+)
 from atlas.platform.runtime.settings import Settings, get_settings
 
 STATIC_DIR = Path(__file__).with_name("static")
@@ -46,7 +56,9 @@ class CompanyIn(CompanyFinancialProfile):
 
 
 class PortfolioIn(BaseModel):
-    name: str
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    name: str = Field(min_length=1, max_length=200)
     companies: list[CompanyIn] = Field(min_length=1)
 
 
@@ -62,6 +74,104 @@ class AgentAskIn(BaseModel):
     portfolio_id: str | None = None
     snapshot_id: str | None = None
     params: dict[str, Any] = Field(default_factory=dict)
+
+
+COMPANY_FIELDS = tuple(CompanyFinancialProfile.model_fields)
+
+
+def _portfolio_input_hash(name: str, companies: list[dict[str, Any]]) -> str:
+    payload = json.dumps(
+        {"name": name, "companies": companies},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def _company_row_payload(row: PortfolioCompanyInputRow) -> dict[str, Any]:
+    return {field: getattr(row, field) for field in COMPANY_FIELDS}
+
+
+def _version_companies(session: Session, version_id: str | None) -> list[dict[str, Any]]:
+    if not version_id:
+        return []
+    rows = session.execute(
+        select(PortfolioCompanyInputRow)
+        .where(PortfolioCompanyInputRow.portfolio_version_id == version_id)
+        .order_by(PortfolioCompanyInputRow.position)
+    ).scalars()
+    return [_company_row_payload(row) for row in rows]
+
+
+def _current_portfolio_version(
+    session: Session,
+    portfolio: PortfolioRow,
+) -> PortfolioVersionRow | None:
+    if not portfolio.current_version_id:
+        return None
+    return session.get(PortfolioVersionRow, portfolio.current_version_id)
+
+
+def _portfolio_companies(session: Session, portfolio: PortfolioRow) -> list[dict[str, Any]]:
+    companies = _version_companies(session, portfolio.current_version_id)
+    return companies or list(portfolio.companies)
+
+
+def _portfolio_response(session: Session, portfolio: PortfolioRow) -> dict[str, Any]:
+    version = _current_portfolio_version(session, portfolio)
+    companies = _portfolio_companies(session, portfolio)
+    return {
+        "portfolio_id": portfolio.id,
+        "name": portfolio.name,
+        "companies": companies,
+        "company_count": len(companies),
+        "current_version_id": version.id if version else None,
+        "version_number": version.version_number if version else None,
+        "created_at": portfolio.created_at,
+        "updated_at": portfolio.updated_at or portfolio.created_at,
+    }
+
+
+def _append_portfolio_version(
+    session: Session,
+    portfolio: PortfolioRow,
+    body: PortfolioIn,
+) -> tuple[PortfolioVersionRow, bool]:
+    companies = [company.model_dump() for company in body.companies]
+    input_hash = _portfolio_input_hash(body.name, companies)
+    current = _current_portfolio_version(session, portfolio)
+    if current and current.input_hash == input_hash:
+        return current, False
+
+    latest_number = session.scalar(
+        select(func.max(PortfolioVersionRow.version_number)).where(
+            PortfolioVersionRow.portfolio_id == portfolio.id
+        )
+    )
+    version = PortfolioVersionRow(
+        id=f"pfv_{uuid.uuid4().hex[:12]}",
+        portfolio_id=portfolio.id,
+        version_number=(latest_number or 0) + 1,
+        portfolio_name=body.name,
+        input_hash=input_hash,
+    )
+    session.add(version)
+    for position, company in enumerate(companies):
+        session.add(
+            PortfolioCompanyInputRow(
+                id=f"pfc_{uuid.uuid4().hex[:12]}",
+                portfolio_version_id=version.id,
+                position=position,
+                **company,
+            )
+        )
+
+    portfolio.name = body.name
+    portfolio.companies = companies
+    portfolio.current_version_id = version.id
+    portfolio.updated_at = utcnow()
+    session.flush()
+    return version, True
 
 
 def _router():
@@ -122,17 +232,78 @@ def _router():
         )
         with c.session_factory() as session:
             session.add(row)
+            session.flush()
+            _, changed = _append_portfolio_version(session, row, body)
             session.commit()
-        return {"portfolio_id": row.id, "name": row.name, "companies": row.companies}
+            response = _portfolio_response(session, row)
+        return {**response, "changed": changed}
+
+    @router.get("/portfolios", dependencies=[require_scope(SCOPE_READ)])
+    def list_portfolios(
+        request: Request,
+        limit: int = Query(default=50, ge=1, le=200),
+    ):
+        c = _container(request)
+        with c.session_factory() as session:
+            rows = session.execute(
+                select(PortfolioRow)
+                .order_by(
+                    func.coalesce(PortfolioRow.updated_at, PortfolioRow.created_at).desc()
+                )
+                .limit(limit)
+            ).scalars()
+            portfolios = [_portfolio_response(session, row) for row in rows]
+        return {"portfolios": portfolios}
+
+    @router.get(
+        "/portfolios/{portfolio_id}/versions",
+        dependencies=[require_scope(SCOPE_READ)],
+    )
+    def list_portfolio_versions(portfolio_id: str, request: Request):
+        c = _container(request)
+        with c.session_factory() as session:
+            portfolio = session.get(PortfolioRow, portfolio_id)
+            if portfolio is None:
+                raise HTTPException(404, "portfolio not found")
+            rows = session.execute(
+                select(PortfolioVersionRow)
+                .where(PortfolioVersionRow.portfolio_id == portfolio_id)
+                .order_by(PortfolioVersionRow.version_number.desc())
+            ).scalars()
+            versions = [
+                {
+                    "version_id": row.id,
+                    "version_number": row.version_number,
+                    "name": row.portfolio_name,
+                    "company_count": len(_version_companies(session, row.id)),
+                    "input_hash": row.input_hash,
+                    "created_at": row.created_at,
+                    "is_current": row.id == portfolio.current_version_id,
+                }
+                for row in rows
+            ]
+        return {"portfolio_id": portfolio_id, "versions": versions}
 
     @router.get("/portfolios/{portfolio_id}", dependencies=[require_scope(SCOPE_READ)])
     def get_portfolio(portfolio_id: str, request: Request):
         c = _container(request)
         with c.session_factory() as session:
             row = session.get(PortfolioRow, portfolio_id)
-        if row is None:
-            raise HTTPException(404, "portfolio not found")
-        return {"portfolio_id": row.id, "name": row.name, "companies": row.companies}
+            if row is None:
+                raise HTTPException(404, "portfolio not found")
+            return _portfolio_response(session, row)
+
+    @router.put("/portfolios/{portfolio_id}", dependencies=[require_scope(SCOPE_RUN)])
+    def update_portfolio(portfolio_id: str, body: PortfolioIn, request: Request):
+        c = _container(request)
+        with c.session_factory() as session:
+            row = session.get(PortfolioRow, portfolio_id, with_for_update=True)
+            if row is None:
+                raise HTTPException(404, "portfolio not found")
+            _, changed = _append_portfolio_version(session, row, body)
+            session.commit()
+            response = _portfolio_response(session, row)
+        return {**response, "changed": changed}
 
     @router.post("/analyses", status_code=202, dependencies=[require_scope(SCOPE_RUN)])
     async def create_analysis(body: AnalysisIn, request: Request):
@@ -146,11 +317,14 @@ def _router():
                 )
 
             params = dict(body.params)
+            portfolio_version_id = None
             if body.portfolio_id:
                 portfolio = session.get(PortfolioRow, body.portfolio_id)
                 if portfolio is None:
                     raise HTTPException(404, "portfolio not found")
-                params.setdefault("companies", portfolio.companies)
+                companies = _portfolio_companies(session, portfolio)
+                params["companies"] = companies
+                portfolio_version_id = portfolio.current_version_id
 
             snapshot_id = body.snapshot_id
             if snapshot_id is None:
@@ -173,6 +347,7 @@ def _router():
             row = AnalysisRow(
                 id=f"run_{uuid.uuid4().hex[:12]}",
                 portfolio_id=body.portfolio_id,
+                portfolio_version_id=portfolio_version_id,
                 engine=body.engine,
                 snapshot_id=snapshot_id,
                 params=params,
@@ -222,6 +397,7 @@ def _router():
                 {
                     "job_id": row.id,
                     "portfolio_id": row.portfolio_id,
+                    "portfolio_version_id": row.portfolio_version_id,
                     "portfolio_name": portfolio_names.get(row.portfolio_id),
                     "engine": row.engine,
                     "snapshot_id": row.snapshot_id,
@@ -246,6 +422,8 @@ def _router():
             raise HTTPException(404, "analysis not found")
         return {
             "job_id": row.id,
+            "portfolio_id": row.portfolio_id,
+            "portfolio_version_id": row.portfolio_version_id,
             "engine": row.engine,
             "snapshot_id": row.snapshot_id,
             "status": row.status,
@@ -268,8 +446,9 @@ def _router():
                 portfolio = session.get(PortfolioRow, body.portfolio_id)
                 if portfolio is None:
                     raise HTTPException(404, "portfolio not found")
-                params.setdefault("companies", portfolio.companies)
-                names = [co.get("name", "?") for co in portfolio.companies]
+                companies = _portfolio_companies(session, portfolio)
+                params["companies"] = companies
+                names = [co.get("name", "?") for co in companies]
                 portfolio_context = f"{portfolio.name}: {', '.join(names)}"
 
             snapshot_id = body.snapshot_id

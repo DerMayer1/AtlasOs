@@ -23,6 +23,15 @@
             </span>
             Impairment
           </a>
+          <a class="nav-item" href="#portfolios" data-page="portfolios">
+            <span class="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M4 7h16v12H4z" />
+                <path d="M8 7V4h8v3M4 11h16" />
+              </svg>
+            </span>
+            Portfolios
+          </a>
           <a class="nav-item" href="#macro-monitor" data-page="macro-monitor">
             <span class="nav-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
@@ -98,6 +107,12 @@
                 required
               />
             </label>
+            <div class="portfolio-context">
+              <span id="portfolio-version-context">New unsaved portfolio</span>
+              <button class="text-button" id="save-portfolio" type="button">
+                Save portfolio
+              </button>
+            </div>
 
             <div class="table-label">Companies</div>
             <div class="company-table">
@@ -167,6 +182,7 @@
                 </div>
                 <dl class="run-metadata">
                   <div><dt>Analysis ID</dt><dd id="analysis-id">—</dd></div>
+                  <div><dt>Portfolio version</dt><dd id="analysis-portfolio-version">—</dd></div>
                   <div><dt>Snapshot</dt><dd id="snapshot-id">—</dd></div>
                   <div><dt>Model</dt><dd id="model-version">—</dd></div>
                   <div><dt>Status</dt><dd id="analysis-status">—</dd></div>
@@ -258,6 +274,90 @@
               </div>
               <div class="history-list" id="history-list">
                 <p class="history-empty">Connect to Atlas to load persisted analyses.</p>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="portfolio-page page-view is-hidden" id="portfolios">
+          <section class="portfolio-command result-surface">
+            <div>
+              <span class="eyebrow">Versioned inputs</span>
+              <h2>Portfolio library</h2>
+              <p>
+                Reuse financial assumptions across analyses while preserving every
+                version that supported a result.
+              </p>
+            </div>
+            <div class="portfolio-command-actions">
+              <button class="button button-secondary" id="refresh-portfolios" type="button">
+                Refresh
+              </button>
+              <button class="button button-primary" id="new-portfolio" type="button">
+                New portfolio
+              </button>
+            </div>
+          </section>
+
+          <div class="portfolio-library-grid">
+            <section class="result-surface portfolio-list-panel">
+              <div class="section-heading compact">
+                <div>
+                  <h2>Saved portfolios</h2>
+                  <p>Current versions available for deterministic execution.</p>
+                </div>
+              </div>
+              <div class="portfolio-list" id="portfolio-list">
+                <p class="history-empty">Connect to Atlas to load portfolios.</p>
+              </div>
+            </section>
+
+            <section class="result-surface portfolio-detail-panel" id="portfolio-detail">
+              <div class="portfolio-detail-empty" id="portfolio-detail-empty">
+                <span class="empty-mark" aria-hidden="true">
+                  <svg viewBox="0 0 48 48">
+                    <path d="M8 14h32v25H8z" />
+                    <path d="M16 14V8h16v6M8 22h32" />
+                  </svg>
+                </span>
+                <h2>Select a portfolio</h2>
+                <p>Inspect its current inputs and immutable version history.</p>
+              </div>
+
+              <div class="is-hidden" id="portfolio-detail-content">
+                <div class="portfolio-detail-heading">
+                  <div>
+                    <span class="eyebrow" id="portfolio-detail-version">—</span>
+                    <h2 id="portfolio-detail-name">—</h2>
+                    <p id="portfolio-detail-meta">—</p>
+                  </div>
+                  <button class="button button-primary" id="use-portfolio" type="button">
+                    Use in analysis
+                  </button>
+                </div>
+
+                <div class="risk-table-wrap">
+                  <table class="risk-table">
+                    <thead>
+                      <tr>
+                        <th>Company</th>
+                        <th>Sector</th>
+                        <th>EBITDA</th>
+                        <th>Multiple</th>
+                        <th>Carrying value</th>
+                      </tr>
+                    </thead>
+                    <tbody id="portfolio-company-list"></tbody>
+                  </table>
+                </div>
+
+                <div class="section-heading compact portfolio-version-heading">
+                  <div>
+                    <h2>Version history</h2>
+                    <p>Inputs are append-only and remain linked to prior analyses.</p>
+                  </div>
+                </div>
+                <div class="version-list" id="portfolio-version-list"></div>
               </div>
             </section>
           </div>

@@ -63,6 +63,8 @@ def test_full_flow_portfolio_to_result(client_and_keys):
     status = client.get(f"/analyses/{job_id}", headers=headers).json()
     assert status["status"] == "succeeded"
     assert status["snapshot_id"] == snapshot_id
+    assert status["portfolio_id"] == pf.json()["portfolio_id"]
+    assert status["portfolio_version_id"] == pf.json()["current_version_id"]
     assert 0.0 <= status["result"]["metrics"]["portfolio_mean_p_impairment"] <= 1.0
 
     # every artifact is downloadable
@@ -70,6 +72,89 @@ def test_full_flow_portfolio_to_result(client_and_keys):
         resp = client.get(f"/artifacts/{job_id}/{artifact['name']}", headers=headers)
         assert resp.status_code == 200
         assert len(resp.content) == artifact["size_bytes"]
+
+
+def test_portfolio_versions_are_immutable_and_deduplicated(client_and_keys):
+    client, run_token, _, _ = client_and_keys
+    headers = {"X-API-Key": run_token}
+
+    created = client.post("/portfolios", json=PORTFOLIO, headers=headers)
+    assert created.status_code == 201
+    portfolio = created.json()
+    assert portfolio["version_number"] == 1
+    assert portfolio["changed"] is True
+
+    unchanged = client.put(
+        f"/portfolios/{portfolio['portfolio_id']}",
+        json=PORTFOLIO,
+        headers=headers,
+    )
+    assert unchanged.status_code == 200
+    assert unchanged.json()["changed"] is False
+    assert unchanged.json()["current_version_id"] == portfolio["current_version_id"]
+
+    updated_payload = {
+        **PORTFOLIO,
+        "companies": [{**PORTFOLIO["companies"][0], "ebitda": 85.0}],
+    }
+    updated = client.put(
+        f"/portfolios/{portfolio['portfolio_id']}",
+        json=updated_payload,
+        headers=headers,
+    )
+    assert updated.status_code == 200
+    assert updated.json()["changed"] is True
+    assert updated.json()["version_number"] == 2
+    assert updated.json()["current_version_id"] != portfolio["current_version_id"]
+
+    versions = client.get(
+        f"/portfolios/{portfolio['portfolio_id']}/versions",
+        headers=headers,
+    )
+    assert versions.status_code == 200
+    version_rows = versions.json()["versions"]
+    assert [row["version_number"] for row in version_rows] == [2, 1]
+    assert version_rows[0]["is_current"] is True
+    assert version_rows[1]["is_current"] is False
+
+    job = client.post(
+        "/analyses",
+        json={
+            "engine": "impairment",
+            "portfolio_id": portfolio["portfolio_id"],
+            "params": {
+                "n_sims": 100,
+                "seed": 11,
+                "companies": PORTFOLIO["companies"] * 2,
+            },
+        },
+        headers=headers,
+    )
+    analysis = client.get(
+        f"/analyses/{job.json()['job_id']}",
+        headers=headers,
+    ).json()
+    assert analysis["portfolio_version_id"] == updated.json()["current_version_id"]
+    assert analysis["result"]["metrics"]["n_companies"] == 1
+
+
+def test_portfolios_can_be_listed_with_current_version(client_and_keys):
+    client, run_token, read_token, _ = client_and_keys
+    created = client.post(
+        "/portfolios",
+        json=PORTFOLIO,
+        headers={"X-API-Key": run_token},
+    ).json()
+
+    response = client.get(
+        "/portfolios",
+        headers={"X-API-Key": read_token},
+    )
+    assert response.status_code == 200
+    portfolios = response.json()["portfolios"]
+    assert portfolios[0]["portfolio_id"] == created["portfolio_id"]
+    assert portfolios[0]["version_number"] == 1
+    assert portfolios[0]["company_count"] == 1
 
 
 def test_auth_required_and_scoped(client_and_keys):
@@ -208,6 +293,7 @@ def test_frontend_and_static_assets_are_served(client_and_keys):
     assert page.status_code == 200
     assert "Impairment analysis" in page.text
     assert "Macro Monitor" in page.text
+    assert "Portfolio library" in page.text
 
     stylesheet = client.get("/static/styles.css")
     script = client.get("/static/app.js")
@@ -216,6 +302,7 @@ def test_frontend_and_static_assets_are_served(client_and_keys):
     assert "runAnalysis" in script.text
     assert "runMacroMonitor" in script.text
     assert "renderMacroRegimeChart" in script.text
+    assert "persistPortfolio" in script.text
 
 
 def test_demo_bootstrap_is_disabled_by_default(client_and_keys):

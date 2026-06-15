@@ -5,6 +5,9 @@ const state = {
   currentResult: null,
   macroJobId: sessionStorage.getItem("atlas_macro_job") || null,
   macroData: null,
+  portfolios: [],
+  selectedPortfolioId: sessionStorage.getItem("atlas_portfolio_id") || null,
+  selectedPortfolio: null,
   companies: [
     {
       name: "Alpha Industrials",
@@ -67,6 +70,8 @@ const elements = {
   portfolioName: document.querySelector("#portfolio-name"),
   nSims: document.querySelector("#n-sims"),
   seed: document.querySelector("#seed"),
+  savePortfolio: document.querySelector("#save-portfolio"),
+  portfolioVersionContext: document.querySelector("#portfolio-version-context"),
   addCompany: document.querySelector("#add-company"),
   clearForm: document.querySelector("#clear-form"),
   runAnalysis: document.querySelector("#run-analysis"),
@@ -90,7 +95,19 @@ const elements = {
   pageTitle: document.querySelector("#page-title"),
   pageSubtitle: document.querySelector("#page-subtitle"),
   impairmentPage: document.querySelector("#impairment"),
+  portfoliosPage: document.querySelector("#portfolios"),
   macroPage: document.querySelector("#macro-monitor"),
+  portfolioList: document.querySelector("#portfolio-list"),
+  portfolioDetailEmpty: document.querySelector("#portfolio-detail-empty"),
+  portfolioDetailContent: document.querySelector("#portfolio-detail-content"),
+  portfolioDetailName: document.querySelector("#portfolio-detail-name"),
+  portfolioDetailVersion: document.querySelector("#portfolio-detail-version"),
+  portfolioDetailMeta: document.querySelector("#portfolio-detail-meta"),
+  portfolioCompanyList: document.querySelector("#portfolio-company-list"),
+  portfolioVersionList: document.querySelector("#portfolio-version-list"),
+  refreshPortfolios: document.querySelector("#refresh-portfolios"),
+  newPortfolio: document.querySelector("#new-portfolio"),
+  usePortfolio: document.querySelector("#use-portfolio"),
   runMacroMonitor: document.querySelector("#run-macro-monitor"),
   macroEmptyState: document.querySelector("#macro-empty-state"),
   macroResults: document.querySelector("#macro-results"),
@@ -103,6 +120,10 @@ const PAGE_COPY = {
   impairment: {
     title: "Impairment analysis",
     subtitle: "Deterministic macro-financial portfolio stress analysis.",
+  },
+  portfolios: {
+    title: "Portfolios",
+    subtitle: "Versioned financial inputs and reproducible analysis context.",
   },
   "macro-monitor": {
     title: "Macro Monitor",
@@ -249,6 +270,7 @@ function hideNotice() {
 function showPage(page) {
   const target = PAGE_COPY[page] ? page : "impairment";
   elements.impairmentPage.classList.toggle("is-hidden", target !== "impairment");
+  elements.portfoliosPage.classList.toggle("is-hidden", target !== "portfolios");
   elements.macroPage.classList.toggle("is-hidden", target !== "macro-monitor");
   elements.navItems.forEach((item) => {
     item.classList.toggle("is-active", item.dataset.page === target);
@@ -310,22 +332,234 @@ function validatePortfolio() {
   }
 }
 
+function portfolioPayload() {
+  return {
+    name: elements.portfolioName.value.trim(),
+    companies: state.companies,
+  };
+}
+
+function setPortfolioContext(portfolio = null) {
+  state.selectedPortfolio = portfolio;
+  state.selectedPortfolioId = portfolio?.portfolio_id || null;
+  if (state.selectedPortfolioId) {
+    sessionStorage.setItem("atlas_portfolio_id", state.selectedPortfolioId);
+  } else {
+    sessionStorage.removeItem("atlas_portfolio_id");
+  }
+  elements.portfolioVersionContext.textContent = portfolio
+    ? `${portfolio.portfolio_id} · version ${portfolio.version_number || "legacy"}`
+    : "New unsaved portfolio";
+}
+
+async function persistPortfolio({ quiet = false } = {}) {
+  validatePortfolio();
+  const payload = portfolioPayload();
+  if (!payload.name) {
+    throw new Error("Portfolio name is required.");
+  }
+  const path = state.selectedPortfolioId
+    ? `/portfolios/${state.selectedPortfolioId}`
+    : "/portfolios";
+  const response = await api(path, {
+    method: state.selectedPortfolioId ? "PUT" : "POST",
+    body: JSON.stringify(payload),
+  });
+  const portfolio = await response.json();
+  setPortfolioContext(portfolio);
+  if (!quiet) {
+    showNotice(
+      portfolio.changed
+        ? `Portfolio saved as version ${portfolio.version_number}.`
+        : `Portfolio version ${portfolio.version_number} is already current.`,
+      "success",
+    );
+  }
+  await loadPortfolios({ quiet: true, selectId: portfolio.portfolio_id });
+  return portfolio;
+}
+
+async function loadPortfolios({ quiet = false, selectId = null } = {}) {
+  if (!state.apiKey) {
+    renderPortfolioList([]);
+    return false;
+  }
+  try {
+    const response = await api("/portfolios?limit=100");
+    const body = await response.json();
+    state.portfolios = body.portfolios;
+    renderPortfolioList(state.portfolios);
+    const targetId =
+      selectId ||
+      (state.selectedPortfolioId &&
+      state.portfolios.some((item) => item.portfolio_id === state.selectedPortfolioId)
+        ? state.selectedPortfolioId
+        : null);
+    if (targetId) {
+      await inspectPortfolio(targetId);
+    } else if (!state.portfolios.length) {
+      clearPortfolioDetail();
+    }
+    return true;
+  } catch (error) {
+    renderPortfolioList([]);
+    if (!quiet) {
+      showNotice(`Unable to load portfolios: ${error.message}`, "error");
+    }
+    return false;
+  }
+}
+
+function renderPortfolioList(portfolios) {
+  elements.portfolioList.replaceChildren();
+  if (!portfolios.length) {
+    const empty = document.createElement("p");
+    empty.className = "history-empty";
+    empty.textContent = state.apiKey
+      ? "No saved portfolios yet."
+      : "Connect to Atlas to load portfolios.";
+    elements.portfolioList.append(empty);
+    return;
+  }
+  portfolios.forEach((portfolio) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "portfolio-list-item";
+    item.classList.toggle(
+      "is-selected",
+      portfolio.portfolio_id === state.selectedPortfolioId,
+    );
+    item.addEventListener("click", () => inspectPortfolio(portfolio.portfolio_id));
+
+    const heading = document.createElement("span");
+    const name = document.createElement("strong");
+    name.textContent = portfolio.name;
+    const id = document.createElement("small");
+    id.textContent = portfolio.portfolio_id;
+    heading.append(name, id);
+
+    const metadata = document.createElement("span");
+    metadata.className = "portfolio-list-meta";
+    metadata.textContent = `${portfolio.company_count} companies · v${
+      portfolio.version_number || "legacy"
+    }`;
+    item.append(heading, metadata);
+    elements.portfolioList.append(item);
+  });
+}
+
+async function inspectPortfolio(portfolioId) {
+  try {
+    const [portfolioResponse, versionsResponse] = await Promise.all([
+      api(`/portfolios/${portfolioId}`),
+      api(`/portfolios/${portfolioId}/versions`),
+    ]);
+    const portfolio = await portfolioResponse.json();
+    const versions = (await versionsResponse.json()).versions;
+    state.selectedPortfolio = portfolio;
+    renderPortfolioDetail(portfolio, versions);
+    renderPortfolioList(state.portfolios);
+  } catch (error) {
+    showNotice(`Unable to inspect portfolio: ${error.message}`, "error");
+  }
+}
+
+function renderPortfolioDetail(portfolio, versions) {
+  elements.portfolioDetailEmpty.classList.add("is-hidden");
+  elements.portfolioDetailContent.classList.remove("is-hidden");
+  elements.portfolioDetailName.textContent = portfolio.name;
+  elements.portfolioDetailVersion.textContent = `Current version ${
+    portfolio.version_number || "legacy"
+  }`;
+  elements.portfolioDetailMeta.textContent =
+    `${portfolio.company_count} companies · updated ${formatDateTime(
+      portfolio.updated_at,
+    )}`;
+
+  elements.portfolioCompanyList.replaceChildren();
+  portfolio.companies.forEach((company) => {
+    const row = document.createElement("tr");
+    [
+      company.name,
+      company.sector,
+      money(company.ebitda),
+      Number(company.multiple).toFixed(2),
+      money(company.carrying_value),
+    ].forEach((value) => {
+      const cell = document.createElement("td");
+      cell.textContent = value;
+      row.append(cell);
+    });
+    elements.portfolioCompanyList.append(row);
+  });
+
+  elements.portfolioVersionList.replaceChildren();
+  if (!versions.length) {
+    const legacy = document.createElement("p");
+    legacy.className = "history-empty";
+    legacy.textContent = "Legacy portfolio. Its first version will be created when saved.";
+    elements.portfolioVersionList.append(legacy);
+  }
+  versions.forEach((version) => {
+    const item = document.createElement("article");
+    item.className = "version-item";
+    const label = document.createElement("strong");
+    label.textContent = `Version ${version.version_number}`;
+    const metadata = document.createElement("span");
+    metadata.textContent = `${version.company_count} companies · ${formatDateTime(
+      version.created_at,
+    )}`;
+    const hash = document.createElement("code");
+    hash.textContent = version.input_hash.slice(0, 12);
+    if (version.is_current) {
+      item.classList.add("is-current");
+      hash.textContent = `current · ${hash.textContent}`;
+    }
+    item.append(label, metadata, hash);
+    elements.portfolioVersionList.append(item);
+  });
+}
+
+function clearPortfolioDetail() {
+  elements.portfolioDetailEmpty.classList.remove("is-hidden");
+  elements.portfolioDetailContent.classList.add("is-hidden");
+}
+
+function loadPortfolioIntoAnalysis(portfolio) {
+  elements.portfolioName.value = portfolio.name;
+  state.companies = portfolio.companies.map((company) => ({ ...company }));
+  setPortfolioContext(portfolio);
+  renderCompanies();
+  showPage("impairment");
+  history.pushState(null, "", "#impairment");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  showNotice(
+    `${portfolio.name} version ${portfolio.version_number || "legacy"} loaded.`,
+    "success",
+  );
+}
+
+function formatDateTime(value) {
+  if (!value) return "unknown date";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
 async function runAnalysis(event) {
   event.preventDefault();
   hideNotice();
   try {
     validatePortfolio();
     setLoading(true);
-    elements.systemMessage.textContent = "Creating portfolio…";
-
-    const portfolioResponse = await api("/portfolios", {
-      method: "POST",
-      body: JSON.stringify({
-        name: elements.portfolioName.value.trim(),
-        companies: state.companies,
-      }),
-    });
-    const portfolio = await portfolioResponse.json();
+    elements.systemMessage.textContent = state.selectedPortfolioId
+      ? "Confirming portfolio version…"
+      : "Creating portfolio…";
+    const portfolio = await persistPortfolio({ quiet: true });
 
     elements.systemMessage.textContent = "Executing deterministic impairment engine…";
     const analysisResponse = await api("/analyses", {
@@ -551,6 +785,8 @@ function renderResult(analysis) {
   document.querySelector("#portfolio-count").textContent =
     `${Math.round(result.metrics.n_companies)} companies · ${result.engine_version}`;
   document.querySelector("#analysis-id").textContent = analysis.job_id;
+  document.querySelector("#analysis-portfolio-version").textContent =
+    analysis.portfolio_version_id || "legacy / inline";
   document.querySelector("#snapshot-id").textContent = analysis.snapshot_id;
   document.querySelector("#model-version").textContent = result.model_version;
   document.querySelector("#analysis-status").textContent = analysis.status;
@@ -1091,6 +1327,7 @@ elements.keyForm.addEventListener("submit", (event) => {
   setConnectionState();
   elements.keyDialog.close();
   loadHistory();
+  loadPortfolios();
 });
 
 elements.addCompany.addEventListener("click", () => {
@@ -1137,11 +1374,38 @@ elements.clearForm.addEventListener("click", () => {
   elements.portfolioName.value = "Atlas Sample Portfolio";
   elements.nSims.value = "10000";
   elements.seed.value = "7";
+  setPortfolioContext(null);
   renderCompanies();
   hideNotice();
 });
 
 elements.form.addEventListener("submit", runAnalysis);
+elements.savePortfolio.addEventListener("click", async () => {
+  hideNotice();
+  try {
+    elements.savePortfolio.disabled = true;
+    elements.systemMessage.textContent = "Saving versioned portfolio inputs…";
+    await persistPortfolio();
+    elements.systemMessage.textContent = "Portfolio inputs are saved and versioned.";
+  } catch (error) {
+    showNotice(error.message, "error");
+    elements.systemMessage.textContent = "Portfolio was not saved.";
+  } finally {
+    elements.savePortfolio.disabled = false;
+  }
+});
+elements.refreshPortfolios.addEventListener("click", () => loadPortfolios());
+elements.newPortfolio.addEventListener("click", () => {
+  elements.clearForm.click();
+  showPage("impairment");
+  history.pushState(null, "", "#impairment");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+});
+elements.usePortfolio.addEventListener("click", () => {
+  if (state.selectedPortfolio) {
+    loadPortfolioIntoAnalysis(state.selectedPortfolio);
+  }
+});
 elements.runMacroMonitor.addEventListener("click", runMacroMonitor);
 elements.refreshAnalysis.addEventListener("click", refreshAnalysis);
 elements.refreshHistory.addEventListener("click", loadHistory);
@@ -1158,7 +1422,11 @@ elements.navItems.forEach((item) => {
   item.addEventListener("click", (event) => {
     const target = item.getAttribute("href");
     showPage(item.dataset.page);
-    if (target === "#impairment" || target === "#macro-monitor") {
+    if (
+      target === "#impairment" ||
+      target === "#portfolios" ||
+      target === "#macro-monitor"
+    ) {
       event.preventDefault();
       history.pushState(null, "", target);
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1166,7 +1434,8 @@ elements.navItems.forEach((item) => {
   });
 });
 window.addEventListener("hashchange", () => {
-  showPage(location.hash === "#macro-monitor" ? "macro-monitor" : "impairment");
+  const page = location.hash.replace("#", "");
+  showPage(PAGE_COPY[page] ? page : "impairment");
 });
 elements.copyCitation.addEventListener("click", async () => {
   const citation = document.querySelector("#portfolio-citation").textContent;
@@ -1181,10 +1450,10 @@ elements.copyCitation.addEventListener("click", async () => {
 async function initialize() {
   renderCompanies();
   setConnectionState();
-  const initialPage =
-    location.hash === "#macro-monitor" ? "macro-monitor" : "impairment";
+  const hashPage = location.hash.replace("#", "");
+  const initialPage = PAGE_COPY[hashPage] ? hashPage : "impairment";
   showPage(initialPage);
-  if (initialPage === "macro-monitor") {
+  if (initialPage !== "impairment") {
     window.setTimeout(() => window.scrollTo({ top: 0 }), 0);
   }
 
@@ -1228,7 +1497,10 @@ async function initialize() {
 
   if (!historyLoaded) {
     renderHistory([]);
+    renderPortfolioList([]);
     elements.systemMessage.textContent = "Waiting for API configuration.";
+  } else {
+    await loadPortfolios({ quiet: true });
   }
   if (state.currentJobId) {
     await refreshAnalysis();
