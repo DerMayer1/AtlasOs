@@ -602,6 +602,53 @@ def _router():
                 raise HTTPException(404, "no report for this analysis")
             return report.content
 
+    @router.get("/reports", dependencies=[require_scope(SCOPE_READ)])
+    def list_reports(
+        request: Request,
+        limit: int = Query(default=10, ge=1, le=100),
+    ):
+        c = _container(request)
+        with c.session_factory() as session:
+            rows = session.execute(
+                select(ReportRow).order_by(ReportRow.created_at.desc()).limit(limit)
+            ).scalars().all()
+            analysis_ids = {row.analysis_id for row in rows}
+            analyses = (
+                session.execute(
+                    select(AnalysisRow).where(AnalysisRow.id.in_(analysis_ids))
+                ).scalars().all()
+                if analysis_ids
+                else []
+            )
+            portfolio_by_analysis = {a.id: a.portfolio_id for a in analyses}
+            portfolio_ids = {pid for pid in portfolio_by_analysis.values() if pid}
+            portfolios = (
+                session.execute(
+                    select(PortfolioRow).where(PortfolioRow.id.in_(portfolio_ids))
+                ).scalars().all()
+                if portfolio_ids
+                else []
+            )
+            portfolio_names = {p.id: p.name for p in portfolios}
+
+            reports = [
+                {
+                    "report_id": row.id,
+                    "analysis_id": row.analysis_id,
+                    "engine": row.engine,
+                    "headline": row.headline,
+                    "action_count": row.action_count,
+                    "max_severity": row.max_severity,
+                    "portfolio_id": portfolio_by_analysis.get(row.analysis_id),
+                    "portfolio_name": portfolio_names.get(
+                        portfolio_by_analysis.get(row.analysis_id)
+                    ),
+                    "created_at": row.created_at,
+                }
+                for row in rows
+            ]
+        return {"reports": reports}
+
     @router.post("/agent/ask", dependencies=[require_scope(SCOPE_RUN)])
     def agent_ask(body: AgentAskIn, request: Request):
         c = _container(request)

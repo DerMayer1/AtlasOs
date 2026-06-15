@@ -101,6 +101,20 @@ const elements = {
   navItems: document.querySelectorAll("[data-page]"),
   pageTitle: document.querySelector("#page-title"),
   pageSubtitle: document.querySelector("#page-subtitle"),
+  overviewPage: document.querySelector("#overview"),
+  overviewMacroRegime: document.querySelector("#overview-macro-regime"),
+  overviewMacroMeta: document.querySelector("#overview-macro-meta"),
+  overviewMacroCard: document.querySelector("#overview-macro-card"),
+  overviewPortfolioCount: document.querySelector("#overview-portfolio-count"),
+  overviewPortfolioRisk: document.querySelector("#overview-portfolio-risk"),
+  overviewDecisionCount: document.querySelector("#overview-decision-count"),
+  overviewDecisionMeta: document.querySelector("#overview-decision-meta"),
+  overviewDecisionsCard: document.querySelector("#overview-decisions-card"),
+  overviewActivityValue: document.querySelector("#overview-activity-value"),
+  overviewActivityMeta: document.querySelector("#overview-activity-meta"),
+  overviewDecisionList: document.querySelector("#overview-decision-list"),
+  overviewRefresh: document.querySelector("#overview-refresh"),
+  overviewShortcuts: document.querySelectorAll(".overview-shortcut"),
   impairmentPage: document.querySelector("#impairment"),
   portfoliosPage: document.querySelector("#portfolios"),
   macroPage: document.querySelector("#macro-monitor"),
@@ -137,6 +151,10 @@ const elements = {
 };
 
 const PAGE_COPY = {
+  overview: {
+    title: "Overview",
+    subtitle: "Macro state, portfolio risk and decisions that need attention.",
+  },
   impairment: {
     title: "Impairment analysis",
     subtitle: "Deterministic macro-financial portfolio stress analysis.",
@@ -292,13 +310,17 @@ function hideNotice() {
 }
 
 function showPage(page) {
-  const target = PAGE_COPY[page] ? page : "impairment";
+  const target = PAGE_COPY[page] ? page : "overview";
+  elements.overviewPage.classList.toggle("is-hidden", target !== "overview");
   elements.impairmentPage.classList.toggle("is-hidden", target !== "impairment");
   elements.portfoliosPage.classList.toggle("is-hidden", target !== "portfolios");
   elements.macroPage.classList.toggle("is-hidden", target !== "macro-monitor");
   elements.askPage.classList.toggle("is-hidden", target !== "ask");
   if (target === "ask") {
     populateAskPortfolios();
+  }
+  if (target === "overview") {
+    loadOverview();
   }
   elements.navItems.forEach((item) => {
     item.classList.toggle("is-active", item.dataset.page === target);
@@ -1254,6 +1276,151 @@ async function askAtlas(event) {
   }
 }
 
+// --- Overview ----------------------------------------------------------------
+
+const SEVERITY_RANK = { info: 0, watch: 1, elevated: 2, critical: 3 };
+
+async function openAnalysis(jobId) {
+  state.currentJobId = jobId;
+  sessionStorage.setItem("atlas_current_job", jobId);
+  await refreshAnalysis();
+}
+
+function relativeTime(value) {
+  const then = new Date(value).getTime();
+  if (Number.isNaN(then)) {
+    return "—";
+  }
+  const seconds = Math.round((Date.now() - then) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  return `${Math.round(hours / 24)} d ago`;
+}
+
+async function loadOverview() {
+  if (!state.apiKey) {
+    return;
+  }
+  try {
+    const [analysesRes, portfoliosRes, reportsRes] = await Promise.all([
+      api("/analyses?limit=50"),
+      api("/portfolios?limit=200"),
+      api("/reports?limit=10"),
+    ]);
+    renderOverview(
+      (await analysesRes.json()).analyses,
+      (await portfoliosRes.json()).portfolios,
+      (await reportsRes.json()).reports,
+    );
+  } catch (error) {
+    elements.overviewDecisionList.replaceChildren();
+    const message = document.createElement("p");
+    message.className = "history-empty";
+    message.textContent = `Unable to load overview: ${error.message}`;
+    elements.overviewDecisionList.append(message);
+  }
+}
+
+function renderOverview(analyses, portfolios, reports) {
+  // Macro card: latest succeeded macro_monitor run.
+  const macro = analyses.find(
+    (a) => a.engine === "macro_monitor" && a.status === "succeeded",
+  );
+  if (macro && macro.macro_regime) {
+    elements.overviewMacroRegime.textContent = capitalize(macro.macro_regime);
+    elements.overviewMacroMeta.textContent =
+      macro.stress_index == null
+        ? "Stress —"
+        : `Stress ${Number(macro.stress_index).toFixed(2)} · ${relativeTime(macro.created_at)}`;
+    elements.overviewMacroCard.dataset.regime = macro.macro_regime;
+  } else {
+    elements.overviewMacroRegime.textContent = "—";
+    elements.overviewMacroMeta.textContent = "No macro run yet";
+    delete elements.overviewMacroCard.dataset.regime;
+  }
+
+  // Portfolio card: count + mean of the latest impairment risk per portfolio.
+  elements.overviewPortfolioCount.textContent = String(portfolios.length);
+  const latestRiskByPortfolio = new Map();
+  analyses
+    .filter(
+      (a) =>
+        a.engine === "impairment" &&
+        a.status === "succeeded" &&
+        a.portfolio_id &&
+        a.portfolio_mean_p_impairment != null,
+    )
+    .forEach((a) => {
+      if (!latestRiskByPortfolio.has(a.portfolio_id)) {
+        latestRiskByPortfolio.set(a.portfolio_id, a.portfolio_mean_p_impairment);
+      }
+    });
+  const risks = [...latestRiskByPortfolio.values()];
+  elements.overviewPortfolioRisk.textContent = risks.length
+    ? `Mean impairment risk ${percent(risks.reduce((s, v) => s + v, 0) / risks.length)}`
+    : "No impairment analysis yet";
+
+  // Decisions card: total actions + worst severity across recent reports.
+  const totalActions = reports.reduce((sum, r) => sum + (r.action_count || 0), 0);
+  const worst = reports.reduce(
+    (acc, r) => (SEVERITY_RANK[r.max_severity] > SEVERITY_RANK[acc] ? r.max_severity : acc),
+    "info",
+  );
+  elements.overviewDecisionCount.textContent = String(totalActions);
+  elements.overviewDecisionMeta.textContent = reports.length
+    ? `Worst severity: ${capitalize(worst)} · ${reports.length} report(s)`
+    : "No reports built yet";
+  elements.overviewDecisionsCard.dataset.severity = reports.length ? worst : "info";
+
+  // Activity card.
+  elements.overviewActivityValue.textContent = String(analyses.length);
+  elements.overviewActivityMeta.textContent = analyses.length
+    ? `Last run ${relativeTime(analyses[0].created_at)}`
+    : "No analyses yet";
+
+  renderOverviewDecisions(reports);
+}
+
+function renderOverviewDecisions(reports) {
+  const list = elements.overviewDecisionList;
+  list.replaceChildren();
+  if (!reports.length) {
+    const empty = document.createElement("p");
+    empty.className = "history-empty";
+    empty.textContent =
+      "No decisions yet. Run an analysis and build a report to populate this list.";
+    list.append(empty);
+    return;
+  }
+  reports.forEach((report) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = `overview-decision is-${report.max_severity}`;
+    item.addEventListener("click", () => openAnalysis(report.analysis_id));
+
+    const main = document.createElement("span");
+    main.className = "overview-decision-main";
+    const headline = document.createElement("strong");
+    headline.textContent = report.headline;
+    const meta = document.createElement("span");
+    const scope = report.portfolio_name || report.engine;
+    meta.textContent = `${scope} · ${relativeTime(report.created_at)}`;
+    main.append(headline, meta);
+
+    const badge = document.createElement("span");
+    badge.className = `overview-decision-badge is-${report.max_severity}`;
+    badge.textContent = report.action_count
+      ? `${report.action_count} · ${capitalize(report.max_severity)}`
+      : "No actions";
+
+    item.append(main, badge);
+    list.append(item);
+  });
+}
+
 async function renderMacroResult(analysis) {
   const jobId = analysis.job_id;
   const [macroState, indicatorsCsv, regimesCsv, historyCsv, scenariosCsv] =
@@ -1835,8 +2002,18 @@ elements.navItems.forEach((item) => {
 });
 window.addEventListener("hashchange", () => {
   const page = location.hash.replace("#", "");
-  showPage(PAGE_COPY[page] ? page : "impairment");
+  showPage(PAGE_COPY[page] ? page : "overview");
 });
+elements.overviewRefresh.addEventListener("click", loadOverview);
+elements.overviewShortcuts.forEach((shortcut) => {
+  shortcut.addEventListener("click", () => {
+    const page = shortcut.dataset.go;
+    history.pushState(null, "", `#${page}`);
+    showPage(page);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+});
+
 elements.buildReport.addEventListener("click", buildReport);
 
 elements.askForm.addEventListener("submit", askAtlas);
@@ -1863,7 +2040,7 @@ async function initialize() {
   renderCompanies();
   setConnectionState();
   const hashPage = location.hash.replace("#", "");
-  const initialPage = PAGE_COPY[hashPage] ? hashPage : "impairment";
+  const initialPage = PAGE_COPY[hashPage] ? hashPage : "overview";
   showPage(initialPage);
   if (initialPage !== "impairment") {
     window.setTimeout(() => window.scrollTo({ top: 0 }), 0);

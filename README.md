@@ -52,9 +52,16 @@ py -3.12 -m venv .venv
 .venv\Scripts\python -m atlas.interfaces.cli demo
 ```
 
-Open http://127.0.0.1:8000. The explicit local demo command creates the
-synthetic snapshot and a browser-session API key automatically. Runs are stored
-and can be reopened from **Recent analyses** without executing the engine again.
+Open http://127.0.0.1:8000. The app opens on the **Overview** page (macro state,
+portfolio risk and decisions needing attention). The explicit local demo command
+creates the synthetic snapshot and a browser-session API key automatically. Runs
+are stored and can be reopened from **Recent analyses** without executing the
+engine again.
+
+> Upgrading an existing dev DB: `auto_create_schema` only creates missing
+> tables, it never alters existing ones. After a schema change, recreate the
+> local SQLite file (`del var\atlas.db`) or run `alembic upgrade head` — otherwise
+> calls hit `no such column`. Production (Postgres) is migrated by Alembic.
 
 For direct API usage, seed credentials manually and start the regular server:
 

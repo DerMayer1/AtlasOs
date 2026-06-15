@@ -179,6 +179,31 @@ def test_report_endpoint_round_trip(client_and_keys):
     assert fetched.json()["report_id"] == body["report_id"]
 
 
+def test_list_reports_after_building(client_and_keys):
+    client, run_token, _ = client_and_keys
+    headers = {"X-API-Key": run_token}
+
+    assert client.get("/reports", headers=headers).json()["reports"] == []
+
+    pf = client.post("/portfolios", json=PORTFOLIO, headers=headers)
+    job = client.post(
+        "/analyses",
+        json={"engine": "impairment", "portfolio_id": pf.json()["portfolio_id"]},
+        headers=headers,
+    )
+    analysis_id = job.json()["job_id"]
+    client.post(f"/analyses/{analysis_id}/report", headers=headers)
+
+    reports = client.get("/reports", headers=headers).json()["reports"]
+    assert len(reports) == 1
+    entry = reports[0]
+    assert entry["analysis_id"] == analysis_id
+    assert entry["engine"] == "impairment"
+    assert entry["portfolio_name"] == "Report PF"
+    assert entry["action_count"] >= 1
+    assert entry["max_severity"] in {"info", "watch", "elevated", "critical"}
+
+
 def test_report_requires_succeeded_analysis(client_and_keys):
     client, run_token, snapshot_id = client_and_keys
     headers = {"X-API-Key": run_token}

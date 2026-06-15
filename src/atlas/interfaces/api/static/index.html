@@ -15,7 +15,15 @@
       <aside class="sidebar">
         <a class="brand" href="/" aria-label="Atlas home">ATLAS</a>
         <nav class="nav" aria-label="Primary">
-          <a class="nav-item is-active" href="#impairment" data-page="impairment">
+          <a class="nav-item is-active" href="#overview" data-page="overview">
+            <span class="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M4 4h7v7H4zM13 4h7v4h-7zM13 11h7v9h-7zM4 14h7v6H4z" />
+              </svg>
+            </span>
+            Overview
+          </a>
+          <a class="nav-item" href="#impairment" data-page="impairment">
             <span class="nav-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
                 <path d="M5 19v-6m7 6V5m7 14V9" />
@@ -96,7 +104,75 @@
 
         <div class="notice is-hidden" id="notice" role="status" aria-live="polite"></div>
 
-        <section class="analysis-layout page-view" id="impairment">
+        <section class="overview-page page-view" id="overview">
+          <div class="overview-kpis" aria-label="Atlas state summary">
+            <article class="overview-card result-surface" id="overview-macro-card">
+              <span class="overview-card-label">Macro regime</span>
+              <strong class="overview-card-value" id="overview-macro-regime">—</strong>
+              <span class="overview-card-meta" id="overview-macro-meta">No macro run yet</span>
+            </article>
+            <article class="overview-card result-surface">
+              <span class="overview-card-label">Portfolios</span>
+              <strong class="overview-card-value" id="overview-portfolio-count">—</strong>
+              <span class="overview-card-meta" id="overview-portfolio-risk">
+                Mean impairment risk —
+              </span>
+            </article>
+            <article class="overview-card result-surface" id="overview-decisions-card">
+              <span class="overview-card-label">Decisions needing attention</span>
+              <strong class="overview-card-value" id="overview-decision-count">—</strong>
+              <span class="overview-card-meta" id="overview-decision-meta">
+                Across recent reports
+              </span>
+            </article>
+            <article class="overview-card result-surface">
+              <span class="overview-card-label">Last activity</span>
+              <strong class="overview-card-value" id="overview-activity-value">—</strong>
+              <span class="overview-card-meta" id="overview-activity-meta">
+                Analyses on the active snapshot
+              </span>
+            </article>
+          </div>
+
+          <div class="result-grid">
+            <section class="result-surface overview-decisions-panel">
+              <div class="section-heading compact">
+                <div>
+                  <h2>Recent decisions</h2>
+                  <p>Deterministic reports with recommended actions. Open one to see the cited evidence.</p>
+                </div>
+                <button class="text-button" id="overview-refresh" type="button">Refresh</button>
+              </div>
+              <div class="overview-decision-list" id="overview-decision-list">
+                <p class="history-empty">Connect to Atlas to load decisions.</p>
+              </div>
+            </section>
+            <section class="result-surface overview-actions-panel">
+              <div class="section-heading compact">
+                <div>
+                  <h2>Quick actions</h2>
+                  <p>Jump into the engines and the agent.</p>
+                </div>
+              </div>
+              <div class="overview-shortcuts">
+                <button type="button" class="overview-shortcut" data-go="impairment">
+                  Run impairment analysis
+                </button>
+                <button type="button" class="overview-shortcut" data-go="macro-monitor">
+                  Run macro monitor
+                </button>
+                <button type="button" class="overview-shortcut" data-go="ask">
+                  Ask Atlas a question
+                </button>
+                <button type="button" class="overview-shortcut" data-go="portfolios">
+                  Manage portfolios
+                </button>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="analysis-layout page-view is-hidden" id="impairment">
           <form class="portfolio-panel" id="portfolio-form">
             <div class="section-heading">
               <div>
