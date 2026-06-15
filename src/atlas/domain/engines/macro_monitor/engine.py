@@ -278,6 +278,12 @@ class MacroMonitorEngine:
             _probability_confidence(row)
             for row in path.to_numpy(dtype=float)
         ]
+        macro_history = macro[indicators].copy()
+        macro_history.insert(
+            0,
+            "period",
+            [_period_label(value) for value in macro_history.index],
+        )
 
         scenario_rows = _scenario_rows(macro, path, indicators)
         regime_probabilities = latest.rename("probability").rename_axis("regime")
@@ -359,6 +365,11 @@ class MacroMonitorEngine:
                 ctx.run_id,
                 "regime_history.csv",
                 _to_csv(history.reset_index(drop=True)),
+            ),
+            ctx.artifacts.publish(
+                ctx.run_id,
+                "macro_history.csv",
+                _to_csv(macro_history.reset_index(drop=True)),
             ),
             ctx.artifacts.publish(
                 ctx.run_id,

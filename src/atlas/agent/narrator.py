@@ -22,7 +22,7 @@ from atlas.agent.schemas import TokenUsage
 from atlas.platform.audit.artifacts import ArtifactStore
 from atlas.platform.contracts.schemas import AnalysisResult
 
-_NON_NARRATIVE_ARTIFACTS = {"regime_history.csv"}
+_NON_NARRATIVE_ARTIFACTS = {"macro_history.csv", "regime_history.csv"}
 
 
 @dataclass

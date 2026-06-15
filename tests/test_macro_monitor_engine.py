@@ -35,6 +35,7 @@ def test_run_publishes_macro_state_and_decision_artifacts(
     assert {artifact.name for artifact in result.artifacts} == {
         "macro_state.json",
         "indicator_snapshot.csv",
+        "macro_history.csv",
         "regime_history.csv",
         "scenario_assumptions.csv",
         "regime_probabilities.csv",
@@ -141,10 +142,11 @@ def test_narrator_excludes_full_regime_history(
     )
     values = citable_values(result, artifact_store)
     assert values
-    assert all(
-        value.artifact_id != "run_macro_citations/regime_history.csv"
-        for value in values
-    )
+    excluded = {
+        "run_macro_citations/macro_history.csv",
+        "run_macro_citations/regime_history.csv",
+    }
+    assert all(value.artifact_id not in excluded for value in values)
 
 
 def test_missing_macro_table_fails(snapshot_store, artifact_store):

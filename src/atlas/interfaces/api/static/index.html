@@ -7,7 +7,7 @@
       name="description"
       content="Atlas macro-financial impairment analysis console."
     />
-    <title>Atlas | Impairment analysis</title>
+    <title>Atlas | Macro-financial analysis</title>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
@@ -15,15 +15,24 @@
       <aside class="sidebar">
         <a class="brand" href="/" aria-label="Atlas home">ATLAS</a>
         <nav class="nav" aria-label="Primary">
-          <a class="nav-item is-active" href="#analysis">
+          <a class="nav-item is-active" href="#impairment" data-page="impairment">
             <span class="nav-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
                 <path d="M5 19v-6m7 6V5m7 14V9" />
               </svg>
             </span>
-            Analysis
+            Impairment
           </a>
-          <a class="nav-item" href="#evidence">
+          <a class="nav-item" href="#macro-monitor" data-page="macro-monitor">
+            <span class="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M4 17 9 12l4 3 7-8" />
+                <path d="M4 21h16M4 3v18" />
+              </svg>
+            </span>
+            Macro Monitor
+          </a>
+          <a class="nav-item" href="#evidence" data-page="impairment">
             <span class="nav-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
                 <path d="M7 3h7l4 4v14H7z" />
@@ -53,8 +62,8 @@
       <main class="workspace">
         <header class="topbar">
           <div>
-            <h1>Impairment analysis</h1>
-            <p>Deterministic macro-financial portfolio stress analysis.</p>
+            <h1 id="page-title">Impairment analysis</h1>
+            <p id="page-subtitle">Deterministic macro-financial portfolio stress analysis.</p>
           </div>
           <div class="connection">
             <span class="status-dot" id="connection-dot"></span>
@@ -70,7 +79,7 @@
 
         <div class="notice is-hidden" id="notice" role="status" aria-live="polite"></div>
 
-        <section class="analysis-layout" id="analysis">
+        <section class="analysis-layout page-view" id="impairment">
           <form class="portfolio-panel" id="portfolio-form">
             <div class="section-heading">
               <div>
@@ -252,6 +261,166 @@
               </div>
             </section>
           </div>
+        </section>
+
+        <section class="macro-page page-view is-hidden" id="macro-monitor">
+          <section class="macro-command result-surface">
+            <div>
+              <span class="eyebrow">Engine 2 · On-demand</span>
+              <h2>Current macro state</h2>
+              <p>
+                Run the monitor against the latest frozen snapshot. No portfolio or
+                market-price forecast is required.
+              </p>
+            </div>
+            <button class="button button-primary" id="run-macro-monitor" type="button">
+              <span class="button-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="m8 5 11 7-11 7z" /></svg>
+              </span>
+              Run monitor
+            </button>
+          </section>
+
+          <section class="empty-state result-surface macro-empty" id="macro-empty-state">
+            <div class="empty-mark" aria-hidden="true">
+              <svg viewBox="0 0 48 48">
+                <path d="M7 34 17 24l8 6 16-18" />
+                <path d="M7 41h34M7 7v34" />
+              </svg>
+            </div>
+            <h2>No macro state generated yet</h2>
+            <p>
+              Run the monitor to classify the current regime, inspect stress drivers,
+              review historical signals and compare reference scenarios.
+            </p>
+          </section>
+
+          <div class="is-hidden macro-results" id="macro-results">
+            <section class="macro-kpi-grid" aria-label="Macro state summary">
+              <article class="macro-kpi result-surface">
+                <span>Current regime</span>
+                <strong id="macro-current-regime">—</strong>
+                <small id="macro-as-of">—</small>
+              </article>
+              <article class="macro-kpi result-surface">
+                <span>Regime confidence</span>
+                <strong id="macro-confidence">—</strong>
+                <small>Entropy-adjusted classification</small>
+              </article>
+              <article class="macro-kpi result-surface">
+                <span>Composite stress</span>
+                <strong id="macro-stress">—</strong>
+                <small id="macro-stress-level">—</small>
+              </article>
+              <article class="macro-kpi result-surface">
+                <span>Active alerts</span>
+                <strong id="macro-alert-count">—</strong>
+                <small id="macro-stress-breadth">—</small>
+              </article>
+            </section>
+
+            <div class="macro-overview-grid">
+              <section class="result-surface macro-regime-panel">
+                <div class="section-heading compact">
+                  <div>
+                    <h2>Regime probabilities</h2>
+                    <p>Current filtered state and one-month transition probability.</p>
+                  </div>
+                </div>
+                <div class="regime-comparison" id="macro-regime-list"></div>
+              </section>
+
+              <section class="result-surface macro-alert-panel">
+                <div class="section-heading compact">
+                  <div>
+                    <h2>Alert drivers</h2>
+                    <p>Adverse levels or momentum above configured thresholds.</p>
+                  </div>
+                </div>
+                <div class="macro-alert-list" id="macro-alert-list"></div>
+              </section>
+            </div>
+
+            <div class="macro-chart-grid">
+              <section class="result-surface chart-panel">
+                <div class="section-heading compact">
+                  <div>
+                    <h2>Regime history</h2>
+                    <p>Filtered probabilities over the latest 60 observations.</p>
+                  </div>
+                </div>
+                <div class="chart-legend" aria-hidden="true">
+                  <span data-series="expansion">Expansion</span>
+                  <span data-series="tightening">Tightening</span>
+                  <span data-series="crisis">Crisis</span>
+                </div>
+                <div class="chart-frame" id="macro-regime-chart"></div>
+              </section>
+
+              <section class="result-surface chart-panel">
+                <div class="section-heading compact chart-heading">
+                  <div>
+                    <h2>Indicator trend</h2>
+                    <p>Monthly levels from the frozen macro snapshot.</p>
+                  </div>
+                  <label class="compact-select">
+                    <span class="sr-only">Select macro indicator</span>
+                    <select id="macro-indicator-select"></select>
+                  </label>
+                </div>
+                <div class="chart-frame" id="macro-indicator-chart"></div>
+              </section>
+            </div>
+
+            <section class="result-surface macro-indicator-panel">
+              <div class="section-heading compact">
+                <div>
+                  <h2>Indicator diagnostics</h2>
+                  <p>Current values, recent movement and adverse historical position.</p>
+                </div>
+              </div>
+              <div class="risk-table-wrap">
+                <table class="risk-table">
+                  <thead>
+                    <tr>
+                      <th>Indicator</th>
+                      <th>Current</th>
+                      <th>3-month change</th>
+                      <th>Stress score</th>
+                      <th>Adverse percentile</th>
+                    </tr>
+                  </thead>
+                  <tbody id="macro-indicator-rows"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="result-surface macro-scenario-panel">
+              <div class="section-heading compact">
+                <div>
+                  <h2>Reference scenarios</h2>
+                  <p>
+                    Base snapshot versus historical medians assigned to tightening and
+                    crisis regimes. These are comparison anchors, not forecasts.
+                  </p>
+                </div>
+              </div>
+              <div class="scenario-cards" id="macro-scenario-cards"></div>
+            </section>
+          </div>
+
+          <section class="history-panel result-surface">
+            <div class="section-heading compact">
+              <div>
+                <h2>Recent macro runs</h2>
+                <p>Reopen a persisted monitor result without executing it again.</p>
+              </div>
+              <button class="text-button" id="refresh-macro-history" type="button">
+                Refresh
+              </button>
+            </div>
+            <div class="history-list" id="macro-history-list"></div>
+          </section>
         </section>
 
         <section class="system-strip" id="system">

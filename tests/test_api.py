@@ -119,6 +119,14 @@ def test_macro_monitor_runs_without_portfolio(client_and_keys):
     assert status["result"]["engine"] == "macro_monitor"
     assert 0.0 <= status["result"]["metrics"]["stress_breadth"] <= 1.0
 
+    history = client.get(
+        "/analyses",
+        headers={"X-API-Key": run_token},
+    ).json()["analyses"]
+    macro_run = next(item for item in history if item["job_id"] == job.json()["job_id"])
+    assert macro_run["macro_regime"] in {"expansion", "tightening", "crisis"}
+    assert macro_run["stress_index"] is not None
+
 
 def test_unknown_snapshot_rejected(client_and_keys):
     client, run_token, _, _ = client_and_keys
@@ -199,12 +207,15 @@ def test_frontend_and_static_assets_are_served(client_and_keys):
     page = client.get("/")
     assert page.status_code == 200
     assert "Impairment analysis" in page.text
+    assert "Macro Monitor" in page.text
 
     stylesheet = client.get("/static/styles.css")
     script = client.get("/static/app.js")
     assert stylesheet.status_code == 200
     assert script.status_code == 200
     assert "runAnalysis" in script.text
+    assert "runMacroMonitor" in script.text
+    assert "renderMacroRegimeChart" in script.text
 
 
 def test_demo_bootstrap_is_disabled_by_default(client_and_keys):

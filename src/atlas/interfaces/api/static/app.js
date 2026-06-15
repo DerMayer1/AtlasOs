@@ -3,6 +3,8 @@ const state = {
   connectionMode: sessionStorage.getItem("atlas_connection_mode") || "api-key",
   currentJobId: sessionStorage.getItem("atlas_current_job") || null,
   currentResult: null,
+  macroJobId: sessionStorage.getItem("atlas_macro_job") || null,
+  macroData: null,
   companies: [
     {
       name: "Alpha Industrials",
@@ -84,6 +86,37 @@ const elements = {
   copyCitation: document.querySelector("#copy-citation"),
   refreshHistory: document.querySelector("#refresh-history"),
   historyList: document.querySelector("#history-list"),
+  navItems: document.querySelectorAll("[data-page]"),
+  pageTitle: document.querySelector("#page-title"),
+  pageSubtitle: document.querySelector("#page-subtitle"),
+  impairmentPage: document.querySelector("#impairment"),
+  macroPage: document.querySelector("#macro-monitor"),
+  runMacroMonitor: document.querySelector("#run-macro-monitor"),
+  macroEmptyState: document.querySelector("#macro-empty-state"),
+  macroResults: document.querySelector("#macro-results"),
+  macroHistoryList: document.querySelector("#macro-history-list"),
+  refreshMacroHistory: document.querySelector("#refresh-macro-history"),
+  macroIndicatorSelect: document.querySelector("#macro-indicator-select"),
+};
+
+const PAGE_COPY = {
+  impairment: {
+    title: "Impairment analysis",
+    subtitle: "Deterministic macro-financial portfolio stress analysis.",
+  },
+  "macro-monitor": {
+    title: "Macro Monitor",
+    subtitle: "Current regimes, stress signals and transparent reference scenarios.",
+  },
+};
+
+const INDICATOR_LABELS = {
+  fed_funds: "Fed funds",
+  baa_aaa_spread: "BAA–AAA spread",
+  t10y2y: "10Y–2Y curve",
+  cpi_yoy: "CPI YoY",
+  unemployment: "Unemployment",
+  vix: "VIX",
 };
 
 function escapeText(value) {
@@ -213,10 +246,29 @@ function hideNotice() {
   elements.notice.textContent = "";
 }
 
+function showPage(page) {
+  const target = PAGE_COPY[page] ? page : "impairment";
+  elements.impairmentPage.classList.toggle("is-hidden", target !== "impairment");
+  elements.macroPage.classList.toggle("is-hidden", target !== "macro-monitor");
+  elements.navItems.forEach((item) => {
+    item.classList.toggle("is-active", item.dataset.page === target);
+  });
+  elements.pageTitle.textContent = PAGE_COPY[target].title;
+  elements.pageSubtitle.textContent = PAGE_COPY[target].subtitle;
+  document.title = `Atlas | ${PAGE_COPY[target].title}`;
+}
+
 function setLoading(loading, label = "Run analysis") {
   elements.body.classList.toggle("is-loading", loading);
   elements.runAnalysis.disabled = loading;
   elements.runAnalysis.lastChild.textContent = loading ? " Running…" : ` ${label}`;
+}
+
+function setMacroLoading(loading) {
+  elements.runMacroMonitor.disabled = loading;
+  elements.runMacroMonitor.lastChild.textContent = loading
+    ? " Running…"
+    : " Run monitor";
 }
 
 async function api(path, options = {}) {
@@ -299,6 +351,29 @@ async function runAnalysis(event) {
   }
 }
 
+async function runMacroMonitor() {
+  hideNotice();
+  try {
+    setMacroLoading(true);
+    elements.systemMessage.textContent = "Executing deterministic Macro Monitor…";
+    const response = await api("/analyses", {
+      method: "POST",
+      body: JSON.stringify({ engine: "macro_monitor" }),
+    });
+    const analysis = await response.json();
+    state.macroJobId = analysis.job_id;
+    state.currentJobId = analysis.job_id;
+    sessionStorage.setItem("atlas_macro_job", state.macroJobId);
+    sessionStorage.setItem("atlas_current_job", state.currentJobId);
+    await refreshAnalysis();
+  } catch (error) {
+    showNotice(error.message, "error");
+    elements.systemMessage.textContent = "Macro Monitor did not complete.";
+  } finally {
+    setMacroLoading(false);
+  }
+}
+
 async function refreshAnalysis() {
   if (!state.currentJobId) {
     return;
@@ -309,10 +384,26 @@ async function refreshAnalysis() {
     const analysis = await response.json();
     if (analysis.status === "succeeded") {
       state.currentResult = analysis.result;
-      renderResult(analysis);
+      if (analysis.engine === "macro_monitor") {
+        state.macroJobId = analysis.job_id;
+        sessionStorage.setItem("atlas_macro_job", state.macroJobId);
+        await renderMacroResult(analysis);
+        showPage("macro-monitor");
+      } else {
+        renderResult(analysis);
+        showPage("impairment");
+      }
       elements.refreshAnalysis.classList.add("is-hidden");
-      elements.systemMessage.textContent = "Analysis completed. Evidence is ready.";
-      showNotice("Analysis completed successfully.", "success");
+      elements.systemMessage.textContent =
+        analysis.engine === "macro_monitor"
+          ? "Macro state completed. Signals and scenarios are ready."
+          : "Analysis completed. Evidence is ready.";
+      showNotice(
+        analysis.engine === "macro_monitor"
+          ? "Macro Monitor completed successfully."
+          : "Analysis completed successfully.",
+        "success",
+      );
       await loadHistory();
       return;
     }
@@ -354,14 +445,29 @@ async function loadHistory({ quiet = false } = {}) {
 }
 
 function renderHistory(analyses) {
-  elements.historyList.replaceChildren();
+  renderHistoryList(
+    elements.historyList,
+    analyses.filter((analysis) => analysis.engine === "impairment"),
+    "impairment",
+  );
+  renderHistoryList(
+    elements.macroHistoryList,
+    analyses.filter((analysis) => analysis.engine === "macro_monitor"),
+    "macro-monitor",
+  );
+}
+
+function renderHistoryList(target, analyses, page) {
+  target.replaceChildren();
   if (!analyses.length) {
     const empty = document.createElement("p");
     empty.className = "history-empty";
     empty.textContent = state.apiKey
-      ? "No persisted analyses yet."
+      ? page === "macro-monitor"
+        ? "No persisted macro runs yet."
+        : "No persisted impairment analyses yet."
       : "Connect to Atlas to load persisted analyses.";
-    elements.historyList.append(empty);
+    target.append(empty);
     return;
   }
 
@@ -373,24 +479,31 @@ function renderHistory(analyses) {
       state.currentJobId = analysis.job_id;
       sessionStorage.setItem("atlas_current_job", state.currentJobId);
       await refreshAnalysis();
-      document.querySelector("#analysis").scrollIntoView({ behavior: "smooth" });
+      document.querySelector(`#${page}`).scrollIntoView({ behavior: "smooth" });
     });
 
     const main = document.createElement("span");
     main.className = "history-main";
     const name = document.createElement("strong");
-    name.textContent = analysis.portfolio_name || analysis.job_id;
+    name.textContent =
+      page === "macro-monitor"
+        ? `${capitalize(analysis.macro_regime || "Macro")} state`
+        : analysis.portfolio_name || analysis.job_id;
     const metadata = document.createElement("span");
     metadata.textContent = `${analysis.job_id} · ${analysis.status}`;
     main.append(name, metadata);
 
     const outcome = document.createElement("span");
     outcome.className =
-      analysis.portfolio_mean_p_impairment == null
+      page === "macro-monitor" || analysis.portfolio_mean_p_impairment == null
         ? "history-risk history-status"
         : "history-risk";
     outcome.textContent =
-      analysis.portfolio_mean_p_impairment == null
+      page === "macro-monitor"
+        ? analysis.stress_index == null
+          ? analysis.status
+          : `Stress ${Number(analysis.stress_index).toFixed(2)}`
+        : analysis.portfolio_mean_p_impairment == null
         ? analysis.status
         : percent(analysis.portfolio_mean_p_impairment);
 
@@ -404,8 +517,13 @@ function renderHistory(analyses) {
     }).format(new Date(analysis.created_at));
 
     item.append(main, outcome, date);
-    elements.historyList.append(item);
+    target.append(item);
   });
+}
+
+function capitalize(value) {
+  const text = String(value || "");
+  return text ? text[0].toUpperCase() + text.slice(1) : "";
 }
 
 function percent(value) {
@@ -491,6 +609,318 @@ function renderRegimes(metrics) {
     row.append(label, track, amount);
     list.append(row);
   });
+}
+
+async function fetchArtifact(jobId, name, type = "text") {
+  const response = await api(`/artifacts/${jobId}/${encodeURIComponent(name)}`, {
+    headers: { Accept: type === "json" ? "application/json" : "text/csv" },
+  });
+  return type === "json" ? response.json() : response.text();
+}
+
+async function renderMacroResult(analysis) {
+  const jobId = analysis.job_id;
+  const [macroState, indicatorsCsv, regimesCsv, historyCsv, scenariosCsv] =
+    await Promise.all([
+      fetchArtifact(jobId, "macro_state.json", "json"),
+      fetchArtifact(jobId, "indicator_snapshot.csv"),
+      fetchArtifact(jobId, "regime_history.csv"),
+      fetchArtifact(jobId, "macro_history.csv"),
+      fetchArtifact(jobId, "scenario_assumptions.csv"),
+    ]);
+
+  state.macroData = {
+    state: macroState,
+    indicators: parseCsv(indicatorsCsv),
+    regimes: parseCsv(regimesCsv),
+    history: parseCsv(historyCsv),
+    scenarios: parseCsv(scenariosCsv),
+  };
+
+  elements.macroEmptyState.classList.add("is-hidden");
+  elements.macroResults.classList.remove("is-hidden");
+  document.querySelector("#macro-current-regime").textContent = capitalize(
+    macroState.regime.current,
+  );
+  document.querySelector("#macro-current-regime").dataset.regime =
+    macroState.regime.current;
+  document.querySelector("#macro-as-of").textContent = `As of ${formatPeriod(
+    macroState.as_of,
+  )}`;
+  document.querySelector("#macro-confidence").textContent = percent(
+    macroState.regime.confidence,
+  );
+  document.querySelector("#macro-stress").textContent =
+    Number(macroState.stress.composite).toFixed(2);
+  document.querySelector("#macro-stress-level").textContent = capitalize(
+    macroState.stress.level,
+  );
+  document.querySelector("#macro-alert-count").textContent = String(
+    macroState.alerts.length,
+  );
+  document.querySelector("#macro-stress-breadth").textContent =
+    `${percent(macroState.stress.breadth)} of indicators elevated`;
+
+  renderMacroRegimeComparison(macroState.regime);
+  renderMacroAlerts(macroState.alerts);
+  renderMacroIndicatorTable(state.macroData.indicators);
+  renderMacroRegimeChart(state.macroData.regimes);
+  configureIndicatorChart(state.macroData.history);
+  renderMacroScenarios(state.macroData.scenarios);
+}
+
+function renderMacroRegimeComparison(regime) {
+  const list = document.querySelector("#macro-regime-list");
+  list.replaceChildren();
+  ["expansion", "tightening", "crisis"].forEach((name) => {
+    const current = Number(regime.probabilities[name]);
+    const next = Number(regime.next_month_probabilities[name]);
+    const row = document.createElement("article");
+    row.className = "regime-comparison-row";
+    row.dataset.regime = name;
+
+    const heading = document.createElement("div");
+    const label = document.createElement("strong");
+    label.textContent = capitalize(name);
+    const values = document.createElement("span");
+    values.textContent = `${percent(current)} now · ${percent(next)} next month`;
+    heading.append(label, values);
+
+    const track = document.createElement("div");
+    track.className = "dual-track";
+    const currentBar = document.createElement("span");
+    currentBar.className = "dual-track-current";
+    currentBar.style.width = `${Math.max(1, current * 100)}%`;
+    const nextMarker = document.createElement("i");
+    nextMarker.style.left = `${Math.min(99, Math.max(1, next * 100))}%`;
+    nextMarker.setAttribute("aria-hidden", "true");
+    track.append(currentBar, nextMarker);
+    row.append(heading, track);
+    list.append(row);
+  });
+}
+
+function renderMacroAlerts(alerts) {
+  const list = document.querySelector("#macro-alert-list");
+  list.replaceChildren();
+  if (!alerts.length) {
+    const empty = document.createElement("p");
+    empty.className = "macro-no-alerts";
+    empty.textContent = "No indicator crossed the configured alert thresholds.";
+    list.append(empty);
+    return;
+  }
+  alerts.forEach((alert) => {
+    const item = document.createElement("article");
+    item.className = `macro-alert is-${alert.severity}`;
+    const marker = document.createElement("span");
+    marker.className = "alert-marker";
+    const body = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = INDICATOR_LABELS[alert.indicator] || alert.indicator;
+    const reason = document.createElement("span");
+    reason.textContent = `${capitalize(alert.reason)} · score ${Number(
+      alert.score,
+    ).toFixed(2)}`;
+    body.append(title, reason);
+    const severity = document.createElement("em");
+    severity.textContent = capitalize(alert.severity);
+    item.append(marker, body, severity);
+    list.append(item);
+  });
+}
+
+function renderMacroIndicatorTable(indicators) {
+  const body = document.querySelector("#macro-indicator-rows");
+  body.replaceChildren();
+  indicators.forEach((indicator) => {
+    const row = document.createElement("tr");
+    const stress = Number(indicator.stress_score);
+    const values = [
+      INDICATOR_LABELS[indicator.indicator] || indicator.indicator,
+      Number(indicator.current_value).toFixed(2),
+      signed(indicator.change_short),
+      stress.toFixed(2),
+      percent(indicator.adverse_percentile),
+    ];
+    values.forEach((value, index) => {
+      const cell = document.createElement("td");
+      cell.textContent = value;
+      if (index === 3) {
+        cell.className =
+          stress >= 1.5
+            ? "signal-value is-critical"
+            : stress >= 0.75
+              ? "signal-value is-elevated"
+              : stress <= -0.75
+                ? "signal-value is-supportive"
+                : "signal-value";
+      }
+      row.append(cell);
+    });
+    body.append(row);
+  });
+}
+
+function renderMacroRegimeChart(rows) {
+  const latest = rows.slice(-60);
+  renderLineChart(
+    document.querySelector("#macro-regime-chart"),
+    latest,
+    [
+      { key: "expansion", color: "#2f7d42" },
+      { key: "tightening", color: "#8a6b2e" },
+      { key: "crisis", color: "#b83a32" },
+    ],
+    { min: 0, max: 1, format: (value) => `${Math.round(value * 100)}%` },
+  );
+}
+
+function configureIndicatorChart(rows) {
+  const keys = Object.keys(rows[0] || {}).filter((key) => key !== "period");
+  const previous = elements.macroIndicatorSelect.value;
+  elements.macroIndicatorSelect.replaceChildren();
+  keys.forEach((key) => {
+    const option = document.createElement("option");
+    option.value = key;
+    option.textContent = INDICATOR_LABELS[key] || key;
+    elements.macroIndicatorSelect.append(option);
+  });
+  elements.macroIndicatorSelect.value = keys.includes(previous)
+    ? previous
+    : keys[0] || "";
+  renderMacroIndicatorChart(rows, elements.macroIndicatorSelect.value);
+}
+
+function renderMacroIndicatorChart(rows, key) {
+  if (!key) return;
+  renderLineChart(
+    document.querySelector("#macro-indicator-chart"),
+    rows.slice(-60),
+    [{ key, color: "#303a48" }],
+    { format: (value) => Number(value).toFixed(1) },
+  );
+}
+
+function renderLineChart(container, rows, series, options = {}) {
+  if (!rows.length) {
+    container.textContent = "No historical observations available.";
+    return;
+  }
+  const width = 720;
+  const height = 260;
+  const margin = { top: 18, right: 54, bottom: 32, left: 46 };
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  const allValues = series.flatMap(({ key }) =>
+    rows.map((row) => Number(row[key])).filter(Number.isFinite),
+  );
+  let min = options.min ?? Math.min(...allValues);
+  let max = options.max ?? Math.max(...allValues);
+  if (min === max) {
+    min -= 1;
+    max += 1;
+  } else if (options.min == null || options.max == null) {
+    const padding = (max - min) * 0.12;
+    min = options.min ?? min - padding;
+    max = options.max ?? max + padding;
+  }
+  const x = (index) =>
+    margin.left + (index / Math.max(1, rows.length - 1)) * plotWidth;
+  const y = (value) =>
+    margin.top + (1 - (Number(value) - min) / (max - min)) * plotHeight;
+  const format = options.format || ((value) => Number(value).toFixed(2));
+  const grid = Array.from({ length: 5 }, (_, index) => {
+    const value = min + ((max - min) * index) / 4;
+    const py = y(value);
+    return `<line x1="${margin.left}" y1="${py}" x2="${
+      width - margin.right
+    }" y2="${py}" class="chart-grid-line"/><text x="${
+      margin.left - 8
+    }" y="${py + 4}" text-anchor="end" class="chart-axis-label">${format(
+      value,
+    )}</text>`;
+  }).join("");
+  const lines = series
+    .map(({ key, color }) => {
+      const points = rows
+        .map((row, index) => `${x(index)},${y(row[key])}`)
+        .join(" ");
+      const lastValue = Number(rows.at(-1)[key]);
+      const lastY = y(lastValue);
+      return `<polyline points="${points}" fill="none" stroke="${color}" class="chart-line"/><circle cx="${x(
+        rows.length - 1,
+      )}" cy="${lastY}" r="3.5" fill="${color}"/><text x="${
+        width - margin.right + 8
+      }" y="${lastY + 4}" class="chart-end-label" fill="${color}">${format(
+        lastValue,
+      )}</text>`;
+    })
+    .join("");
+  const firstPeriod = formatPeriod(rows[0].period);
+  const lastPeriod = formatPeriod(rows.at(-1).period);
+  container.innerHTML = `
+    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Historical time-series chart from ${firstPeriod} to ${lastPeriod}">
+      ${grid}
+      <line x1="${margin.left}" y1="${height - margin.bottom}" x2="${
+        width - margin.right
+      }" y2="${height - margin.bottom}" class="chart-axis"/>
+      ${lines}
+      <text x="${margin.left}" y="${height - 8}" class="chart-axis-label">${firstPeriod}</text>
+      <text x="${width - margin.right}" y="${
+        height - 8
+      }" text-anchor="end" class="chart-axis-label">${lastPeriod}</text>
+    </svg>`;
+}
+
+function renderMacroScenarios(scenarios) {
+  const container = document.querySelector("#macro-scenario-cards");
+  container.replaceChildren();
+  scenarios.forEach((scenario) => {
+    const card = document.createElement("article");
+    card.className = `scenario-card is-${scenario.scenario}`;
+    const heading = document.createElement("div");
+    const title = document.createElement("h3");
+    title.textContent = capitalize(scenario.scenario);
+    const sample = document.createElement("span");
+    sample.textContent =
+      scenario.scenario === "base"
+        ? "Current snapshot"
+        : `${Math.round(Number(scenario.sample_size))} historical months`;
+    heading.append(title, sample);
+    card.append(heading);
+
+    Object.keys(INDICATOR_LABELS)
+      .filter((indicator) => `${indicator}_level` in scenario)
+      .forEach((indicator) => {
+        const row = document.createElement("div");
+        const label = document.createElement("span");
+        label.textContent = INDICATOR_LABELS[indicator];
+        const value = document.createElement("strong");
+        const delta = Number(scenario[`${indicator}_delta`]);
+        value.textContent = `${Number(
+          scenario[`${indicator}_level`],
+        ).toFixed(2)} · ${signed(delta)}`;
+        row.append(label, value);
+        card.append(row);
+      });
+    container.append(card);
+  });
+}
+
+function signed(value) {
+  const number = Number(value);
+  return `${number > 0 ? "+" : ""}${number.toFixed(2)}`;
+}
+
+function formatPeriod(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date);
 }
 
 async function loadPortfolioScenarios(jobId) {
@@ -712,8 +1142,32 @@ elements.clearForm.addEventListener("click", () => {
 });
 
 elements.form.addEventListener("submit", runAnalysis);
+elements.runMacroMonitor.addEventListener("click", runMacroMonitor);
 elements.refreshAnalysis.addEventListener("click", refreshAnalysis);
 elements.refreshHistory.addEventListener("click", loadHistory);
+elements.refreshMacroHistory.addEventListener("click", loadHistory);
+elements.macroIndicatorSelect.addEventListener("change", () => {
+  if (state.macroData) {
+    renderMacroIndicatorChart(
+      state.macroData.history,
+      elements.macroIndicatorSelect.value,
+    );
+  }
+});
+elements.navItems.forEach((item) => {
+  item.addEventListener("click", (event) => {
+    const target = item.getAttribute("href");
+    showPage(item.dataset.page);
+    if (target === "#impairment" || target === "#macro-monitor") {
+      event.preventDefault();
+      history.pushState(null, "", target);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  });
+});
+window.addEventListener("hashchange", () => {
+  showPage(location.hash === "#macro-monitor" ? "macro-monitor" : "impairment");
+});
 elements.copyCitation.addEventListener("click", async () => {
   const citation = document.querySelector("#portfolio-citation").textContent;
   try {
@@ -727,6 +1181,12 @@ elements.copyCitation.addEventListener("click", async () => {
 async function initialize() {
   renderCompanies();
   setConnectionState();
+  const initialPage =
+    location.hash === "#macro-monitor" ? "macro-monitor" : "impairment";
+  showPage(initialPage);
+  if (initialPage === "macro-monitor") {
+    window.setTimeout(() => window.scrollTo({ top: 0 }), 0);
+  }
 
   let historyLoaded = state.apiKey
     ? await loadHistory({ quiet: true })

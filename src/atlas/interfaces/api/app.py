@@ -209,10 +209,14 @@ def _router():
 
         analyses = []
         for row in rows:
-            metric = None
+            metrics = {}
             if row.result:
-                metric = row.result.get("metrics", {}).get(
-                    "portfolio_mean_p_impairment"
+                metrics = row.result.get("metrics", {})
+            regime = None
+            if row.engine == "macro_monitor" and metrics:
+                regime = max(
+                    ("expansion", "tightening", "crisis"),
+                    key=lambda name: metrics.get(f"p_regime_{name}", 0.0),
                 )
             analyses.append(
                 {
@@ -222,7 +226,11 @@ def _router():
                     "engine": row.engine,
                     "snapshot_id": row.snapshot_id,
                     "status": row.status,
-                    "portfolio_mean_p_impairment": metric,
+                    "portfolio_mean_p_impairment": metrics.get(
+                        "portfolio_mean_p_impairment"
+                    ),
+                    "macro_regime": regime,
+                    "stress_index": metrics.get("stress_index"),
                     "created_at": row.created_at,
                     "finished_at": row.finished_at,
                 }
