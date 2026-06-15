@@ -89,6 +89,13 @@ const elements = {
   connectionLabel: document.querySelector("#connection-label"),
   connectionDetail: document.querySelector("#connection-detail"),
   copyCitation: document.querySelector("#copy-citation"),
+  buildReport: document.querySelector("#build-report"),
+  reportEmpty: document.querySelector("#report-empty"),
+  reportBody: document.querySelector("#report-body"),
+  reportHeadline: document.querySelector("#report-headline"),
+  reportFigures: document.querySelector("#report-figures"),
+  reportDrivers: document.querySelector("#report-drivers"),
+  reportActions: document.querySelector("#report-actions"),
   refreshHistory: document.querySelector("#refresh-history"),
   historyList: document.querySelector("#history-list"),
   navItems: document.querySelectorAll("[data-page]"),
@@ -816,6 +823,122 @@ function renderResult(analysis) {
   const citation =
     `[${analysis.job_id}/metrics.json:portfolio_mean_p_impairment]`;
   document.querySelector("#portfolio-citation").textContent = citation;
+
+  resetReport();
+  loadReport(analysis.job_id);
+}
+
+function resetReport() {
+  elements.reportBody.classList.add("is-hidden");
+  elements.reportEmpty.classList.remove("is-hidden");
+  elements.reportFigures.replaceChildren();
+  elements.reportDrivers.replaceChildren();
+  elements.reportActions.replaceChildren();
+}
+
+function formatFigure(value, format) {
+  if (format === "ratio") return percent(value);
+  if (format === "currency") return money(value);
+  if (format === "count") return String(Math.round(Number(value)));
+  return Number(value).toFixed(2);
+}
+
+function citationChip(runId, citation) {
+  const chip = document.createElement("button");
+  chip.type = "button";
+  chip.className = "citation-chip";
+  chip.textContent = `${citation.artifact}:${citation.locator}`;
+  chip.title = "Open the artifact behind this number";
+  chip.addEventListener("click", () => openArtifact(runId, citation.artifact, false));
+  return chip;
+}
+
+function renderReportFigures(target, runId, figures) {
+  target.replaceChildren();
+  figures.forEach((figure) => {
+    const item = document.createElement("li");
+    item.className = `report-figure is-${figure.severity}`;
+    const label = document.createElement("span");
+    label.className = "report-figure-label";
+    label.textContent = figure.label;
+    const value = document.createElement("strong");
+    value.className = "report-figure-value";
+    value.textContent = formatFigure(figure.value, figure.format);
+    item.append(label, value, citationChip(runId, figure.citation));
+    target.append(item);
+  });
+}
+
+function renderReport(report) {
+  elements.reportEmpty.classList.add("is-hidden");
+  elements.reportBody.classList.remove("is-hidden");
+  elements.reportHeadline.textContent = report.headline;
+
+  renderReportFigures(elements.reportFigures, report.run_id, report.key_figures);
+  renderReportFigures(elements.reportDrivers, report.run_id, report.risk_drivers);
+
+  elements.reportActions.replaceChildren();
+  if (!report.actions.length) {
+    const empty = document.createElement("li");
+    empty.className = "report-action-empty";
+    empty.textContent = "No actions flagged for this run.";
+    elements.reportActions.append(empty);
+    return;
+  }
+  report.actions.forEach((action) => {
+    const item = document.createElement("li");
+    item.className = `report-action is-${action.severity}`;
+
+    const head = document.createElement("div");
+    head.className = "report-action-head";
+    const badge = document.createElement("span");
+    badge.className = "report-action-severity";
+    badge.textContent = capitalize(action.severity);
+    const title = document.createElement("span");
+    title.className = "report-action-title";
+    title.textContent = action.title;
+    head.append(badge, title);
+
+    const rationale = document.createElement("p");
+    rationale.className = "report-action-rationale";
+    rationale.textContent = action.rationale;
+
+    const cites = document.createElement("div");
+    cites.className = "report-action-citations";
+    action.citations.forEach((citation) =>
+      cites.append(citationChip(report.run_id, citation)),
+    );
+
+    item.append(head, rationale, cites);
+    elements.reportActions.append(item);
+  });
+}
+
+async function loadReport(jobId) {
+  try {
+    const response = await api(`/analyses/${jobId}/report`);
+    renderReport(await response.json());
+  } catch {
+    resetReport();
+  }
+}
+
+async function buildReport() {
+  if (!state.currentJobId) {
+    return;
+  }
+  elements.buildReport.disabled = true;
+  try {
+    const response = await api(`/analyses/${state.currentJobId}/report`, {
+      method: "POST",
+    });
+    renderReport(await response.json());
+    showNotice("Decision report ready.", "success");
+  } catch (error) {
+    showNotice(error.message, "error");
+  } finally {
+    elements.buildReport.disabled = false;
+  }
 }
 
 function renderRegimes(metrics) {
@@ -1437,6 +1560,8 @@ window.addEventListener("hashchange", () => {
   const page = location.hash.replace("#", "");
   showPage(PAGE_COPY[page] ? page : "impairment");
 });
+elements.buildReport.addEventListener("click", buildReport);
+
 elements.copyCitation.addEventListener("click", async () => {
   const citation = document.querySelector("#portfolio-citation").textContent;
   try {

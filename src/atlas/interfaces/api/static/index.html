@@ -260,6 +260,36 @@
                   </div>
                 </section>
               </div>
+
+              <section class="report-panel result-surface" id="report-panel">
+                <div class="section-heading compact">
+                  <div>
+                    <h2>Decision report</h2>
+                    <p>Deterministic figures and recommended actions, each citing its number.</p>
+                  </div>
+                  <button class="text-button" id="build-report" type="button">
+                    Build report
+                  </button>
+                </div>
+                <p class="report-empty" id="report-empty">
+                  No report yet. Build one to turn this run into recommended actions.
+                </p>
+                <div class="report-body is-hidden" id="report-body">
+                  <p class="report-headline" id="report-headline">—</p>
+                  <div class="report-columns">
+                    <div class="report-figures">
+                      <h3>Key figures</h3>
+                      <ul id="report-figures"></ul>
+                    </div>
+                    <div class="report-figures">
+                      <h3>Risk drivers</h3>
+                      <ul id="report-drivers"></ul>
+                    </div>
+                  </div>
+                  <h3>Recommended actions</h3>
+                  <ul class="report-actions" id="report-actions"></ul>
+                </div>
+              </section>
             </div>
 
             <section class="history-panel result-surface" id="history">
