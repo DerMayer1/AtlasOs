@@ -104,6 +104,19 @@ const elements = {
   impairmentPage: document.querySelector("#impairment"),
   portfoliosPage: document.querySelector("#portfolios"),
   macroPage: document.querySelector("#macro-monitor"),
+  askPage: document.querySelector("#ask"),
+  askForm: document.querySelector("#ask-form"),
+  askQuestion: document.querySelector("#ask-question"),
+  askPortfolio: document.querySelector("#ask-portfolio"),
+  askSubmit: document.querySelector("#ask-submit"),
+  askExamples: document.querySelector("#ask-examples"),
+  askEmptyState: document.querySelector("#ask-empty-state"),
+  askAnswer: document.querySelector("#ask-answer"),
+  askBanner: document.querySelector("#ask-banner"),
+  askNarrative: document.querySelector("#ask-narrative"),
+  askMeta: document.querySelector("#ask-meta"),
+  askPlan: document.querySelector("#ask-plan"),
+  askCitations: document.querySelector("#ask-citations"),
   portfolioList: document.querySelector("#portfolio-list"),
   portfolioDetailEmpty: document.querySelector("#portfolio-detail-empty"),
   portfolioDetailContent: document.querySelector("#portfolio-detail-content"),
@@ -135,6 +148,10 @@ const PAGE_COPY = {
   "macro-monitor": {
     title: "Macro Monitor",
     subtitle: "Current regimes, stress signals and transparent reference scenarios.",
+  },
+  ask: {
+    title: "Ask Atlas",
+    subtitle: "Institutional questions answered from cited numbers, never from the LLM.",
   },
 };
 
@@ -279,6 +296,10 @@ function showPage(page) {
   elements.impairmentPage.classList.toggle("is-hidden", target !== "impairment");
   elements.portfoliosPage.classList.toggle("is-hidden", target !== "portfolios");
   elements.macroPage.classList.toggle("is-hidden", target !== "macro-monitor");
+  elements.askPage.classList.toggle("is-hidden", target !== "ask");
+  if (target === "ask") {
+    populateAskPortfolios();
+  }
   elements.navItems.forEach((item) => {
     item.classList.toggle("is-active", item.dataset.page === target);
   });
@@ -977,6 +998,262 @@ async function fetchArtifact(jobId, name, type = "text") {
   return type === "json" ? response.json() : response.text();
 }
 
+// --- Ask Atlas ---------------------------------------------------------------
+
+async function populateAskPortfolios() {
+  if (!state.portfolios.length) {
+    await loadPortfolios({ quiet: true }).catch(() => {});
+  }
+  const select = elements.askPortfolio;
+  const previous = select.value;
+  select.replaceChildren();
+  const none = document.createElement("option");
+  none.value = "";
+  none.textContent = "No portfolio (macro questions)";
+  select.append(none);
+  state.portfolios.forEach((portfolio) => {
+    const option = document.createElement("option");
+    option.value = portfolio.portfolio_id;
+    option.textContent = portfolio.name;
+    select.append(option);
+  });
+  select.value = previous || state.selectedPortfolioId || "";
+}
+
+const CITATION_PATTERN = /\[([^\][:]+):([^\][]+)\]/g;
+
+function appendNarrativeWithCitations(target, narrative) {
+  target.replaceChildren();
+  let lastIndex = 0;
+  let match;
+  CITATION_PATTERN.lastIndex = 0;
+  while ((match = CITATION_PATTERN.exec(narrative)) !== null) {
+    if (match.index > lastIndex) {
+      target.append(narrative.slice(lastIndex, match.index));
+    }
+    const artifactId = match[1];
+    const locator = match[2];
+    const slash = artifactId.indexOf("/");
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "citation-chip";
+    chip.textContent = `${artifactId}:${locator}`;
+    chip.title = "Open the artifact behind this number";
+    if (slash > -1) {
+      const runId = artifactId.slice(0, slash);
+      const name = artifactId.slice(slash + 1);
+      chip.addEventListener("click", () => openArtifact(runId, name, false));
+    } else {
+      chip.disabled = true;
+    }
+    target.append(chip);
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < narrative.length) {
+    target.append(narrative.slice(lastIndex));
+  }
+}
+
+function isRefusal(answer) {
+  // Plan.is_refusal is a server-side @property and is not serialized: an empty
+  // calls list is the refusal signal.
+  return answer.plan.calls.length === 0;
+}
+
+function renderAskBanner(answer) {
+  const banner = elements.askBanner;
+  if (isRefusal(answer)) {
+    banner.className = "ask-banner is-refusal";
+    banner.textContent =
+      answer.plan.refusal_reason ||
+      "Atlas declined: the question is outside the engines' capabilities.";
+    banner.classList.remove("is-hidden");
+    return;
+  }
+  if (answer.degraded) {
+    banner.className = "ask-banner is-degraded";
+    banner.textContent =
+      "Numbers-only answer: " +
+      (answer.degraded_reason || "narration failed citation validation.");
+    banner.classList.remove("is-hidden");
+    return;
+  }
+  banner.classList.add("is-hidden");
+  banner.textContent = "";
+}
+
+function renderAskMeta(answer) {
+  const valid = answer.citations.orphan_claims.length === 0 &&
+    answer.citations.citations.every((c) => c.ok);
+  const parts = [
+    {
+      label: answer.citations.citations.length
+        ? valid
+          ? "Citations valid"
+          : "Citation issues"
+        : "No citations",
+      cls: answer.citations.citations.length
+        ? valid
+          ? "is-ok"
+          : "is-bad"
+        : "",
+    },
+    { label: answer.llm_model || "deterministic planner" },
+    {
+      label: `${answer.usage.input_tokens + answer.usage.output_tokens} tokens · $${answer.usage.cost_usd.toFixed(4)}`,
+    },
+    { label: `${answer.latency_ms} ms` },
+    { label: answer.trace_id },
+  ];
+  elements.askMeta.replaceChildren();
+  parts.forEach((part) => {
+    const chip = document.createElement("span");
+    chip.className = `ask-meta-chip ${part.cls || ""}`.trim();
+    chip.textContent = part.label;
+    elements.askMeta.append(chip);
+  });
+}
+
+function renderAskPlan(answer) {
+  const container = elements.askPlan;
+  container.replaceChildren();
+  if (isRefusal(answer)) {
+    const p = document.createElement("p");
+    p.className = "ask-plan-empty";
+    p.textContent = "No engine was called.";
+    container.append(p);
+    return;
+  }
+  const executedByEngine = new Map(
+    answer.executed.map((call) => [call.engine, call]),
+  );
+  answer.plan.calls.forEach((call) => {
+    const executed = executedByEngine.get(call.engine);
+    const item = document.createElement("div");
+    item.className = "ask-plan-item";
+    const head = document.createElement("div");
+    head.className = "ask-plan-head";
+    const engine = document.createElement("strong");
+    engine.textContent = call.engine;
+    const status = document.createElement("span");
+    status.className = `ask-plan-status is-${executed ? executed.status : "planned"}`;
+    status.textContent = executed
+      ? `${executed.status} · ${executed.latency_ms} ms`
+      : "planned";
+    head.append(engine, status);
+    item.append(head);
+    if (call.reason) {
+      const reason = document.createElement("p");
+      reason.className = "ask-plan-reason";
+      reason.textContent = call.reason;
+      item.append(reason);
+    }
+    if (executed && executed.run_id) {
+      const run = document.createElement("button");
+      run.type = "button";
+      run.className = "citation-chip";
+      run.textContent = `${executed.run_id}/metrics.json`;
+      run.addEventListener("click", () =>
+        openArtifact(executed.run_id, "metrics.json", false),
+      );
+      item.append(run);
+    }
+    container.append(item);
+  });
+}
+
+function renderAskCitations(answer) {
+  const container = elements.askCitations;
+  container.replaceChildren();
+  const citations = answer.citations.citations;
+  if (!citations.length) {
+    const p = document.createElement("p");
+    p.className = "ask-plan-empty";
+    p.textContent = "This answer makes no numeric claims to cite.";
+    container.append(p);
+  }
+  citations.forEach((citation) => {
+    const item = document.createElement("div");
+    item.className = `ask-citation-item is-${citation.ok ? "ok" : "bad"}`;
+    const loc = document.createElement("button");
+    loc.type = "button";
+    loc.className = "citation-chip";
+    loc.textContent = `${citation.artifact_id}:${citation.locator}`;
+    const slash = citation.artifact_id.indexOf("/");
+    if (slash > -1) {
+      const runId = citation.artifact_id.slice(0, slash);
+      const name = citation.artifact_id.slice(slash + 1);
+      loc.addEventListener("click", () => openArtifact(runId, name, false));
+    } else {
+      loc.disabled = true;
+    }
+    const detail = document.createElement("span");
+    detail.className = "ask-citation-detail";
+    const resolved =
+      citation.resolved_value == null ? "—" : citation.resolved_value;
+    detail.textContent = citation.ok
+      ? `✓ ${resolved}`
+      : `✗ ${citation.detail || "mismatch"}`;
+    item.append(loc, detail);
+    container.append(item);
+  });
+  answer.citations.orphan_claims.forEach((claim) => {
+    const item = document.createElement("div");
+    item.className = "ask-citation-item is-bad";
+    const span = document.createElement("span");
+    span.className = "ask-citation-detail";
+    span.textContent = `Uncited figure: ${claim}`;
+    item.append(span);
+    container.append(item);
+  });
+}
+
+function renderAnswer(answer) {
+  elements.askEmptyState.classList.add("is-hidden");
+  elements.askAnswer.classList.remove("is-hidden");
+  appendNarrativeWithCitations(
+    elements.askNarrative,
+    answer.narrative || "Atlas returned no narrative for this question.",
+  );
+  renderAskBanner(answer);
+  renderAskMeta(answer);
+  renderAskPlan(answer);
+  renderAskCitations(answer);
+}
+
+function setAskLoading(loading) {
+  elements.askSubmit.disabled = loading;
+  elements.askSubmit.textContent = loading ? "Asking…" : "Ask";
+}
+
+async function askAtlas(event) {
+  if (event) {
+    event.preventDefault();
+  }
+  const question = elements.askQuestion.value.trim();
+  if (!question) {
+    showNotice("Enter a question first.", "error");
+    return;
+  }
+  hideNotice();
+  setAskLoading(true);
+  try {
+    const body = { question };
+    if (elements.askPortfolio.value) {
+      body.portfolio_id = elements.askPortfolio.value;
+    }
+    const response = await api("/agent/ask", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    renderAnswer(await response.json());
+  } catch (error) {
+    showNotice(error.message, "error");
+  } finally {
+    setAskLoading(false);
+  }
+}
+
 async function renderMacroResult(analysis) {
   const jobId = analysis.job_id;
   const [macroState, indicatorsCsv, regimesCsv, historyCsv, scenariosCsv] =
@@ -1561,6 +1838,16 @@ window.addEventListener("hashchange", () => {
   showPage(PAGE_COPY[page] ? page : "impairment");
 });
 elements.buildReport.addEventListener("click", buildReport);
+
+elements.askForm.addEventListener("submit", askAtlas);
+elements.askExamples.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-q]");
+  if (!button) {
+    return;
+  }
+  elements.askQuestion.value = button.dataset.q;
+  askAtlas();
+});
 
 elements.copyCitation.addEventListener("click", async () => {
   const citation = document.querySelector("#portfolio-citation").textContent;

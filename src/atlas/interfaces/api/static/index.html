@@ -41,6 +41,14 @@
             </span>
             Macro Monitor
           </a>
+          <a class="nav-item" href="#ask" data-page="ask">
+            <span class="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+            </span>
+            Ask Atlas
+          </a>
           <a class="nav-item" href="#evidence" data-page="impairment">
             <span class="nav-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
@@ -551,6 +559,90 @@
             </div>
             <div class="history-list" id="macro-history-list"></div>
           </section>
+        </section>
+
+        <section class="ask-page page-view is-hidden" id="ask">
+          <section class="ask-command result-surface">
+            <div class="section-heading compact">
+              <div>
+                <h2>Ask Atlas</h2>
+                <p>
+                  The agent plans engine calls, runs the deterministic engines and
+                  narrates the result. Every figure cites its number; the LLM never
+                  calculates.
+                </p>
+              </div>
+            </div>
+            <form id="ask-form" class="ask-form">
+              <label class="field">
+                <span>Question</span>
+                <textarea
+                  id="ask-question"
+                  rows="3"
+                  placeholder="What is the impairment risk in a 2022-style scenario?"
+                ></textarea>
+              </label>
+              <div class="ask-controls">
+                <label class="field">
+                  <span>Portfolio (optional)</span>
+                  <select id="ask-portfolio">
+                    <option value="">No portfolio (macro questions)</option>
+                  </select>
+                </label>
+                <button class="button" id="ask-submit" type="submit">Ask</button>
+              </div>
+            </form>
+            <div class="ask-examples" id="ask-examples">
+              <span>Try:</span>
+              <button type="button" data-q="What is the impairment risk in a 2022-style scenario?">
+                Impairment in a 2022 scenario
+              </button>
+              <button type="button" data-q="What macro regime are we in and how confident is it?">
+                Current macro regime
+              </button>
+              <button type="button" data-q="What is the tail loss for this portfolio?">
+                Portfolio tail loss
+              </button>
+            </div>
+          </section>
+
+          <section class="empty-state result-surface ask-empty" id="ask-empty-state">
+            <div class="empty-mark" aria-hidden="true">
+              <svg viewBox="0 0 48 48">
+                <path d="M42 30a4 4 0 0 1-4 4H14l-8 8V10a4 4 0 0 1 4-4h28a4 4 0 0 1 4 4z" />
+              </svg>
+            </div>
+            <h2>Ask a question to begin</h2>
+            <p>Atlas answers only from the numbers its engines produced for a frozen snapshot.</p>
+          </section>
+
+          <div class="ask-answer is-hidden" id="ask-answer">
+            <section class="result-surface ask-narrative-panel">
+              <div class="ask-banner is-hidden" id="ask-banner"></div>
+              <p class="ask-narrative" id="ask-narrative">—</p>
+              <div class="ask-meta" id="ask-meta"></div>
+            </section>
+            <div class="result-grid">
+              <section class="result-surface ask-plan-panel">
+                <div class="section-heading compact">
+                  <div>
+                    <h2>Plan &amp; execution</h2>
+                    <p>The typed engine calls the orchestrator chose.</p>
+                  </div>
+                </div>
+                <div id="ask-plan"></div>
+              </section>
+              <section class="result-surface ask-citation-panel">
+                <div class="section-heading compact">
+                  <div>
+                    <h2>Citations</h2>
+                    <p>Each claimed figure checked against the artifacts.</p>
+                  </div>
+                </div>
+                <div id="ask-citations"></div>
+              </section>
+            </div>
+          </div>
         </section>
 
         <section class="system-strip" id="system">
