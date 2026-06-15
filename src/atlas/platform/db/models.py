@@ -144,6 +144,13 @@ class ReportRow(Base):
     max_severity: Mapped[str] = mapped_column(String(20), default="info")
     previous_run_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     content: Mapped[dict[str, Any]] = mapped_column(JSON)
+    # Optional AI narrative ANNOTATION (PRD: the LLM explains, never calculates).
+    # Kept separate from the deterministic `content`: figures and actions never
+    # depend on it, and the trace (degraded, model) records how it was produced.
+    narrative: Mapped[str | None] = mapped_column(Text, nullable=True)
+    narrative_degraded: Mapped[bool] = mapped_column(default=False)
+    narrative_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    narrative_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

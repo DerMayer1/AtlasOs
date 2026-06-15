@@ -77,6 +77,15 @@ class AgentService:
         self.trace_store.save(answer, PROMPT_VERSION, portfolio_id)
         return answer
 
+    def narrate(self, question: str, results: list[AnalysisResult]):
+        """Public narration: LLM prose validated against artifacts, with one
+        retry and graceful degradation to the deterministic template. Reused by
+        the decision-report AI narrative (the LLM explains, never calculates).
+
+        Returns (narrative, citation_report, degraded, reason, usage)."""
+        ok_results = [r for r in results if r is not None]
+        return self._narrate(question, ok_results)
+
     # -- internals ----------------------------------------------------------
 
     def _run_plan(

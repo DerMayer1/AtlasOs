@@ -204,6 +204,45 @@ def test_list_reports_after_building(client_and_keys):
     assert entry["max_severity"] in {"info", "watch", "elevated", "critical"}
 
 
+def test_report_ai_narrative_degrades_without_llm(client_and_keys):
+    client, run_token, _ = client_and_keys
+    headers = {"X-API-Key": run_token}
+
+    pf = client.post("/portfolios", json=PORTFOLIO, headers=headers)
+    job = client.post(
+        "/analyses",
+        json={"engine": "impairment", "portfolio_id": pf.json()["portfolio_id"]},
+        headers=headers,
+    )
+    analysis_id = job.json()["job_id"]
+
+    # narrating before a report exists is rejected
+    assert (
+        client.post(f"/analyses/{analysis_id}/report/narrative", headers=headers).status_code
+        == 404
+    )
+
+    client.post(f"/analyses/{analysis_id}/report", headers=headers)
+    # the freshly built report has no narrative yet
+    assert client.get(f"/analyses/{analysis_id}/report", headers=headers).json()[
+        "ai_narrative"
+    ] is None
+
+    narrated = client.post(f"/analyses/{analysis_id}/report/narrative", headers=headers)
+    assert narrated.status_code == 200
+    body = narrated.json()
+    # no LLM key in tests => deterministic template, marked degraded but cited
+    assert body["degraded"] is True
+    assert body["narrative"]
+    assert "[" in body["narrative"]  # carries citation tokens
+
+    # the annotation is persisted and returned by GET
+    fetched = client.get(f"/analyses/{analysis_id}/report", headers=headers).json()
+    assert fetched["ai_narrative"]["narrative"] == body["narrative"]
+    # the deterministic content is untouched
+    assert fetched["headline"] and fetched["actions"]
+
+
 def test_report_requires_succeeded_analysis(client_and_keys):
     client, run_token, snapshot_id = client_and_keys
     headers = {"X-API-Key": run_token}

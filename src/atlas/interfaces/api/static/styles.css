@@ -1772,6 +1772,40 @@ input:focus {
   color: var(--ink);
 }
 
+.report-narrative-block {
+  display: grid;
+  gap: 8px;
+  padding: 12px 13px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--canvas);
+}
+
+.report-narrative-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.report-narrative-label {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.report-narrative {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--ink);
+}
+
+.report-narrative .citation-chip {
+  margin: 0 1px;
+}
+
 .report-actions {
   margin: 0;
   padding: 0;

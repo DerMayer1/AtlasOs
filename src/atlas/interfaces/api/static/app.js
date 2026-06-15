@@ -90,6 +90,9 @@ const elements = {
   connectionDetail: document.querySelector("#connection-detail"),
   copyCitation: document.querySelector("#copy-citation"),
   buildReport: document.querySelector("#build-report"),
+  reportNarrate: document.querySelector("#report-narrate"),
+  reportNarrativeBanner: document.querySelector("#report-narrative-banner"),
+  reportNarrative: document.querySelector("#report-narrative"),
   reportEmpty: document.querySelector("#report-empty"),
   reportBody: document.querySelector("#report-body"),
   reportHeadline: document.querySelector("#report-headline"),
@@ -877,6 +880,57 @@ function resetReport() {
   elements.reportFigures.replaceChildren();
   elements.reportDrivers.replaceChildren();
   elements.reportActions.replaceChildren();
+  resetReportNarrative();
+}
+
+function resetReportNarrative() {
+  elements.reportNarrative.classList.add("is-hidden");
+  elements.reportNarrative.replaceChildren();
+  elements.reportNarrativeBanner.classList.add("is-hidden");
+  elements.reportNarrativeBanner.textContent = "";
+  elements.reportNarrate.textContent = "Explain with AI";
+}
+
+function renderReportNarrative(runId, payload) {
+  if (!payload || !payload.narrative) {
+    resetReportNarrative();
+    return;
+  }
+  appendNarrativeWithCitations(elements.reportNarrative, payload.narrative);
+  elements.reportNarrative.classList.remove("is-hidden");
+  elements.reportNarrate.textContent = "Regenerate";
+
+  const banner = elements.reportNarrativeBanner;
+  if (payload.degraded) {
+    banner.className = "ask-banner is-degraded";
+    banner.textContent =
+      "Deterministic template: " +
+      (payload.reason || "no LLM configured; the figures are unchanged.");
+    banner.classList.remove("is-hidden");
+  } else {
+    banner.className = "ask-banner is-hidden";
+    banner.textContent = "";
+  }
+}
+
+async function narrateReport() {
+  if (!state.currentJobId) {
+    return;
+  }
+  elements.reportNarrate.disabled = true;
+  const previous = elements.reportNarrate.textContent;
+  elements.reportNarrate.textContent = "Explaining…";
+  try {
+    const response = await api(`/analyses/${state.currentJobId}/report/narrative`, {
+      method: "POST",
+    });
+    renderReportNarrative(state.currentJobId, await response.json());
+  } catch (error) {
+    showNotice(error.message, "error");
+    elements.reportNarrate.textContent = previous;
+  } finally {
+    elements.reportNarrate.disabled = false;
+  }
 }
 
 function formatFigure(value, format) {
@@ -916,6 +970,8 @@ function renderReport(report) {
   elements.reportEmpty.classList.add("is-hidden");
   elements.reportBody.classList.remove("is-hidden");
   elements.reportHeadline.textContent = report.headline;
+
+  renderReportNarrative(report.run_id, report.ai_narrative);
 
   renderReportFigures(elements.reportFigures, report.run_id, report.key_figures);
   renderReportFigures(elements.reportDrivers, report.run_id, report.risk_drivers);
@@ -2015,6 +2071,7 @@ elements.overviewShortcuts.forEach((shortcut) => {
 });
 
 elements.buildReport.addEventListener("click", buildReport);
+elements.reportNarrate.addEventListener("click", narrateReport);
 
 elements.askForm.addEventListener("submit", askAtlas);
 elements.askExamples.addEventListener("click", (event) => {

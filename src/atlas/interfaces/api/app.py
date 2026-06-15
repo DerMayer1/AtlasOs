@@ -24,7 +24,7 @@ from atlas.domain.reports.builder import build_report
 from atlas.interfaces.api.auth import SCOPE_READ, SCOPE_RUN, create_api_key, require_scope
 from atlas.interfaces.api.container import Container, build_container
 from atlas.platform.audit.snapshots import SnapshotNotFoundError
-from atlas.platform.contracts.schemas import utcnow
+from atlas.platform.contracts.schemas import AnalysisResult, utcnow
 from atlas.platform.db.models import (
     AnalysisRow,
     PortfolioCompanyInputRow,
@@ -132,6 +132,29 @@ def _resilience_rows(c: Container, run_id: str) -> list[dict[str, Any]]:
     import pandas as pd
 
     return pd.read_csv(path).to_dict(orient="records")
+
+
+def _ai_narrative_payload(report: ReportRow) -> dict[str, Any] | None:
+    if report.narrative is None:
+        return None
+    return {
+        "narrative": report.narrative,
+        "degraded": report.narrative_degraded,
+        "reason": report.narrative_reason,
+        "model": report.narrative_model,
+    }
+
+
+def _report_narration_question(report: ReportRow) -> str:
+    actions = [a.get("title", "") for a in report.content.get("actions", [])]
+    action_text = "; ".join(a for a in actions if a) or "no actions were flagged"
+    return (
+        "Write a short institutional note explaining this decision report. "
+        f"Headline: {report.headline} "
+        f"Recommended actions: {action_text}. "
+        "Explain what the figures imply and why each action was recommended. "
+        "Cite every figure with its token and write no other number."
+    )
 
 
 def _previous_succeeded_analysis(
@@ -600,7 +623,40 @@ def _router():
             ).scalar_one_or_none()
             if report is None:
                 raise HTTPException(404, "no report for this analysis")
-            return report.content
+            return {**report.content, "ai_narrative": _ai_narrative_payload(report)}
+
+    @router.post(
+        "/analyses/{analysis_id}/report/narrative",
+        dependencies=[require_scope(SCOPE_RUN)],
+    )
+    def narrate_report(analysis_id: str, request: Request):
+        c = _container(request)
+        with c.session_factory() as session:
+            report = session.execute(
+                select(ReportRow)
+                .where(ReportRow.analysis_id == analysis_id)
+                .order_by(ReportRow.created_at.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+            if report is None:
+                raise HTTPException(404, "build a report before narrating it")
+            analysis = session.get(AnalysisRow, analysis_id)
+            if analysis is None or not analysis.result:
+                raise HTTPException(409, "analysis result is unavailable")
+
+            result = AnalysisResult.model_validate(analysis.result)
+            question = _report_narration_question(report)
+            narrative, _citations, degraded, reason, _usage = c.agent.narrate(
+                question, [result]
+            )
+
+            report.narrative = narrative
+            report.narrative_degraded = degraded
+            report.narrative_reason = reason
+            report.narrative_model = c.agent.llm.model
+            session.commit()
+            payload = _ai_narrative_payload(report)
+        return payload
 
     @router.get("/reports", dependencies=[require_scope(SCOPE_READ)])
     def list_reports(
