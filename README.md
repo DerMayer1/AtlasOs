@@ -83,9 +83,20 @@ docker compose run --rm api python -m atlas.interfaces.cli seed
 ```
 
 API at http://localhost:8000 (OpenAPI docs at `/docs`). Endpoints: `POST /portfolios`,
-`POST /analyses` (returns `job_id`), `GET /analyses/{id}`, `POST /agent/ask`,
+`POST /analyses` (returns `job_id`), `GET /analyses/{id}`,
+`POST /analyses/{id}/report`, `GET /analyses/{id}/report`, `POST /agent/ask`,
 `GET /agent/traces/{id}`, `GET /artifacts/{run_id}/{name}`, `GET /health`. Auth
 via `X-API-Key` with `read`/`run` scopes.
+
+`POST /analyses` is idempotent: an identical request (same engine, engine/model
+version, snapshot and params) returns the existing run with `"deduplicated": true`
+instead of re-executing the engine; pass `"force": true` to run anyway. The
+report endpoint builds a **deterministic** decision report from a succeeded
+analysis — key figures, risk drivers and recommended actions, each citing the
+artifact value that triggered it (`artifact:locator`). No LLM produces or
+chooses any number; the report is persisted and queryable. Actions follow fixed
+policy rules (e.g. high stress + low liquidity → review refinancing; material
+increase vs the previous run → escalate).
 
 ## Real macro data + validation (Phase 2)
 

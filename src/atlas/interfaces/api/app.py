@@ -20,6 +20,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from atlas.domain.engines.impairment.models import CompanyFinancialProfile
+from atlas.domain.reports.builder import build_report
 from atlas.interfaces.api.auth import SCOPE_READ, SCOPE_RUN, create_api_key, require_scope
 from atlas.interfaces.api.container import Container, build_container
 from atlas.platform.audit.snapshots import SnapshotNotFoundError
@@ -29,6 +30,7 @@ from atlas.platform.db.models import (
     PortfolioCompanyInputRow,
     PortfolioRow,
     PortfolioVersionRow,
+    ReportRow,
     SnapshotRow,
 )
 from atlas.platform.runtime.settings import Settings, get_settings
@@ -67,6 +69,9 @@ class AnalysisIn(BaseModel):
     portfolio_id: str | None = None
     snapshot_id: str | None = None  # default: latest registered snapshot
     params: dict[str, Any] = Field(default_factory=dict)
+    # By default an identical request reuses the existing run instead of
+    # re-executing the engine; force=True always creates a fresh run.
+    force: bool = False
 
 
 class AgentAskIn(BaseModel):
@@ -90,6 +95,66 @@ def _portfolio_input_hash(name: str, companies: list[dict[str, Any]]) -> str:
 
 def _company_row_payload(row: PortfolioCompanyInputRow) -> dict[str, Any]:
     return {field: getattr(row, field) for field in COMPANY_FIELDS}
+
+
+_ACTIVE_STATUSES = ("queued", "running", "succeeded")
+_SEVERITY_ORDER = {"info": 0, "watch": 1, "elevated": 2, "critical": 3}
+
+
+def _analysis_idempotency_key(
+    engine: str,
+    engine_version: str,
+    model_version: str,
+    snapshot_id: str,
+    params: dict[str, Any],
+) -> str:
+    payload = json.dumps(
+        {
+            "engine": engine,
+            "engine_version": engine_version,
+            "model_version": model_version,
+            "snapshot_id": snapshot_id,
+            "params": params,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def _resilience_rows(c: Container, run_id: str) -> list[dict[str, Any]]:
+    """Parse one run's financial_resilience.csv, or [] if it has none."""
+    try:
+        path = c.artifacts.open_path(f"{run_id}/financial_resilience.csv")
+    except FileNotFoundError:
+        return []
+    import pandas as pd
+
+    return pd.read_csv(path).to_dict(orient="records")
+
+
+def _previous_succeeded_analysis(
+    session: Session,
+    row: AnalysisRow,
+) -> AnalysisRow | None:
+    """The prior succeeded run of the same engine + portfolio, for diffing."""
+    stmt = (
+        select(AnalysisRow)
+        .where(
+            AnalysisRow.engine == row.engine,
+            AnalysisRow.status == "succeeded",
+            AnalysisRow.id != row.id,
+            AnalysisRow.created_at < row.created_at,
+        )
+        .order_by(AnalysisRow.created_at.desc())
+        .limit(1)
+    )
+    if row.portfolio_id:
+        stmt = stmt.where(AnalysisRow.portfolio_id == row.portfolio_id)
+    else:
+        stmt = stmt.where(AnalysisRow.portfolio_id.is_(None))
+    return session.execute(stmt).scalar_one_or_none()
 
 
 def _version_companies(session: Session, version_id: str | None) -> list[dict[str, Any]]:
@@ -344,6 +409,32 @@ def _router():
                 except SnapshotNotFoundError:
                     raise HTTPException(404, f"snapshot {snapshot_id!r} not found") from None
 
+            worker = c.registry.get(body.engine)
+            idempotency_key = _analysis_idempotency_key(
+                body.engine,
+                worker.engine_version,
+                worker.model_version,
+                snapshot_id,
+                params,
+            )
+
+            if not body.force:
+                existing = session.execute(
+                    select(AnalysisRow)
+                    .where(
+                        AnalysisRow.idempotency_key == idempotency_key,
+                        AnalysisRow.status.in_(_ACTIVE_STATUSES),
+                    )
+                    .order_by(AnalysisRow.created_at.desc())
+                    .limit(1)
+                ).scalar_one_or_none()
+                if existing is not None:
+                    return {
+                        "job_id": existing.id,
+                        "status": existing.status,
+                        "deduplicated": True,
+                    }
+
             row = AnalysisRow(
                 id=f"run_{uuid.uuid4().hex[:12]}",
                 portfolio_id=body.portfolio_id,
@@ -351,6 +442,7 @@ def _router():
                 engine=body.engine,
                 snapshot_id=snapshot_id,
                 params=params,
+                idempotency_key=idempotency_key,
                 status="queued",
             )
             session.add(row)
@@ -358,7 +450,7 @@ def _router():
             job_id = row.id
 
         await c.queue.enqueue_analysis(job_id)
-        return {"job_id": job_id, "status": "queued"}
+        return {"job_id": job_id, "status": "queued", "deduplicated": False}
 
     @router.get("/analyses", dependencies=[require_scope(SCOPE_READ)])
     def list_analyses(
@@ -434,6 +526,81 @@ def _router():
             "started_at": row.started_at,
             "finished_at": row.finished_at,
         }
+
+    @router.post(
+        "/analyses/{analysis_id}/report",
+        status_code=201,
+        dependencies=[require_scope(SCOPE_RUN)],
+    )
+    def create_report(analysis_id: str, request: Request):
+        c = _container(request)
+        with c.session_factory() as session:
+            row = session.get(AnalysisRow, analysis_id)
+            if row is None:
+                raise HTTPException(404, "analysis not found")
+            if row.status != "succeeded" or not row.result:
+                raise HTTPException(
+                    409,
+                    f"analysis is {row.status!r}; a report needs a succeeded analysis",
+                )
+
+            metrics = dict(row.result.get("metrics", {}))
+            previous = _previous_succeeded_analysis(session, row)
+            previous_metrics = (
+                dict(previous.result.get("metrics", {}))
+                if previous and previous.result
+                else None
+            )
+
+            report = build_report(
+                run_id=row.id,
+                engine=row.engine,
+                snapshot_id=row.snapshot_id,
+                engine_version=row.result.get("engine_version", ""),
+                model_version=row.result.get("model_version", ""),
+                metrics=metrics,
+                resilience_rows=_resilience_rows(c, row.id),
+                previous_metrics=previous_metrics,
+                previous_run_id=previous.id if previous else None,
+            )
+
+            max_severity = max(
+                (a.severity for a in report.actions),
+                key=lambda s: _SEVERITY_ORDER[s],
+                default="info",
+            )
+            session.add(
+                ReportRow(
+                    id=report.report_id,
+                    analysis_id=row.id,
+                    org_id=row.org_id,
+                    engine=row.engine,
+                    headline=report.headline,
+                    action_count=len(report.actions),
+                    max_severity=max_severity,
+                    previous_run_id=report.previous_run_id,
+                    content=report.model_dump(mode="json"),
+                )
+            )
+            session.commit()
+        return report.model_dump(mode="json")
+
+    @router.get(
+        "/analyses/{analysis_id}/report",
+        dependencies=[require_scope(SCOPE_READ)],
+    )
+    def get_report(analysis_id: str, request: Request):
+        c = _container(request)
+        with c.session_factory() as session:
+            report = session.execute(
+                select(ReportRow)
+                .where(ReportRow.analysis_id == analysis_id)
+                .order_by(ReportRow.created_at.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+            if report is None:
+                raise HTTPException(404, "no report for this analysis")
+            return report.content
 
     @router.post("/agent/ask", dependencies=[require_scope(SCOPE_RUN)])
     def agent_ask(body: AgentAskIn, request: Request):

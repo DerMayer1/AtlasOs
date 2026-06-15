@@ -110,6 +110,9 @@ class AnalysisRow(Base):
     engine: Mapped[str] = mapped_column(String(100))
     snapshot_id: Mapped[str] = mapped_column(String(100))
     params: Mapped[dict[str, Any]] = mapped_column(JSON)
+    # sha256 over (engine, engine/model version, snapshot, params): identical
+    # requests collapse onto one run instead of re-executing the engine.
+    idempotency_key: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(20), default="queued")
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -117,6 +120,31 @@ class AnalysisRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ReportRow(Base):
+    """A deterministic decision report built from one analysis (PRD §7.1).
+
+    ``content`` is the structured Report (figures, drivers, cited actions) — it
+    is small operational data, not heavy simulation output, so it lives in
+    Postgres where it is queryable; the underlying numbers stay in artifacts."""
+
+    __tablename__ = "reports"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    analysis_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("analyses.id"),
+        index=True,
+    )
+    org_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    engine: Mapped[str] = mapped_column(String(100))
+    headline: Mapped[str] = mapped_column(Text)
+    action_count: Mapped[int] = mapped_column(Integer, default=0)
+    max_severity: Mapped[str] = mapped_column(String(20), default="info")
+    previous_run_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    content: Mapped[dict[str, Any]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class SnapshotRow(Base):
