@@ -1,24 +1,26 @@
 :root {
   color-scheme: dark;
   font-family:
-    "Helvetica Neue", Helvetica, Arial, "Liberation Sans", system-ui, sans-serif;
-  --bg: #14161a;
-  --surface: #1c1f25;
-  --surface-strong: #23272e;
-  --ink: #d8dde3;
-  --ink-soft: #9aa1aa;
-  --muted: #6f7782;
-  --line: #2a2f37;
-  --line-strong: #3a414b;
-  --green: #3fae6b;
-  --green-dark: #45b873;
-  --amber: #e0a33a;
-  --red: #e5594e;
-  --accent: #e8833a;
-  --sidebar: #101217;
-  --sidebar-soft: #1c1f25;
+    "Barlow Semi Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --bg: #050607;
+  --surface: #0c0e11;
+  --surface-strong: #15181c;
+  --ink: #e4e7ea;
+  --ink-soft: #9098a1;
+  --muted: #69707a;
+  --line: #1d2127;
+  --line-strong: #2c323a;
+  --green: #1fc77d;
+  --green-dark: #1fc77d;
+  --amber: #f0a830;
+  --red: #ff4d44;
+  --accent: #f0a830;
+  --sidebar: #000000;
+  --sidebar-soft: #0c0e11;
   --shadow: none;
-  --mono: "Geist Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  --pos: #1fc77d;
+  --neg: #ff4d44;
 }
 
 * {
@@ -36,6 +38,7 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-size: 14px;
+  font-feature-settings: "tnum" 1;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -333,17 +336,17 @@ select:focus {
 .macro-grid,
 .system-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(340px, 0.75fr);
-  gap: 10px;
-  max-width: 1560px;
+  grid-template-columns: minmax(0, 1.3fr) minmax(330px, 0.7fr);
+  gap: 6px;
+  max-width: 1640px;
   margin: 0 auto;
 }
 
 .reports-grid {
   display: grid;
-  grid-template-columns: minmax(340px, 0.78fr) minmax(0, 1.22fr);
-  gap: 10px;
-  max-width: 1560px;
+  grid-template-columns: minmax(330px, 0.74fr) minmax(0, 1.26fr);
+  gap: 6px;
+  max-width: 1640px;
   margin: 0 auto;
 }
 
@@ -351,7 +354,7 @@ select:focus {
   display: grid;
   grid-column: 1 / -1;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+  gap: 6px;
 }
 
 .metric {
@@ -405,7 +408,7 @@ select:focus {
 }
 
 .panel > :not(.panel-header) {
-  padding: 14px;
+  padding: 10px 12px;
 }
 
 .panel-header {
