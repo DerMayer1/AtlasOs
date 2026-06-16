@@ -567,6 +567,15 @@ def _router():
                     f"analysis is {row.status!r}; a report needs a succeeded analysis",
                 )
 
+            existing = session.execute(
+                select(ReportRow)
+                .where(ReportRow.analysis_id == analysis_id)
+                .order_by(ReportRow.created_at.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+            if existing is not None:
+                return {**existing.content, "ai_narrative": _ai_narrative_payload(existing)}
+
             metrics = dict(row.result.get("metrics", {}))
             previous = _previous_succeeded_analysis(session, row)
             previous_metrics = (

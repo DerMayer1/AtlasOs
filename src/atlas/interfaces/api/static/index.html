@@ -40,6 +40,24 @@
             </span>
             Portfolios
           </a>
+          <a class="nav-item" href="#analyses" data-page="analyses">
+            <span class="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M4 6h16M4 12h16M4 18h10" />
+                <path d="M17 16l3 2-3 2z" />
+              </svg>
+            </span>
+            Analyses
+          </a>
+          <a class="nav-item" href="#reports" data-page="reports">
+            <span class="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M7 3h10l3 3v15H7z" />
+                <path d="M17 3v4h4M10 11h7M10 15h7M10 19h4" />
+              </svg>
+            </span>
+            Reports
+          </a>
           <a class="nav-item" href="#macro-monitor" data-page="macro-monitor">
             <span class="nav-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
@@ -56,15 +74,6 @@
               </svg>
             </span>
             Ask Atlas
-          </a>
-          <a class="nav-item" href="#evidence" data-page="impairment">
-            <span class="nav-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24">
-                <path d="M7 3h7l4 4v14H7z" />
-                <path d="M14 3v5h5" />
-              </svg>
-            </span>
-            Evidence
           </a>
           <a class="nav-item" href="#system">
             <span class="nav-icon" aria-hidden="true">
@@ -167,6 +176,145 @@
                 <button type="button" class="overview-shortcut" data-go="portfolios">
                   Manage portfolios
                 </button>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="operations-page page-view is-hidden" id="analyses">
+          <section class="operations-command result-surface">
+            <div>
+              <span class="eyebrow">Execution ledger</span>
+              <h2>Analyses</h2>
+              <p>
+                One operational table for every engine run. Open results, build
+                decision reports and inspect evidence without rerunning engines.
+              </p>
+            </div>
+            <div class="operations-actions">
+              <button class="button button-secondary" id="refresh-analyses" type="button">
+                Refresh
+              </button>
+              <button class="button button-primary" id="new-analysis" type="button">
+                New impairment run
+              </button>
+            </div>
+          </section>
+
+          <section class="result-surface operations-panel">
+            <div class="operations-filters">
+              <label class="field">
+                <span>Engine</span>
+                <select id="analysis-engine-filter">
+                  <option value="">All engines</option>
+                  <option value="impairment">Impairment</option>
+                  <option value="macro_monitor">Macro Monitor</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Status</span>
+                <select id="analysis-status-filter">
+                  <option value="">All statuses</option>
+                  <option value="succeeded">Succeeded</option>
+                  <option value="queued">Queued</option>
+                  <option value="running">Running</option>
+                  <option value="failed">Failed</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Portfolio</span>
+                <select id="analysis-portfolio-filter">
+                  <option value="">All portfolios</option>
+                </select>
+              </label>
+            </div>
+            <div class="risk-table-wrap">
+              <table class="risk-table operations-table">
+                <thead>
+                  <tr>
+                    <th>Run</th>
+                    <th>Engine</th>
+                    <th>Portfolio</th>
+                    <th>Status</th>
+                    <th>Outcome</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="analyses-table-body">
+                  <tr><td colspan="7">Connect to Atlas to load analyses.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section class="operations-page page-view is-hidden" id="reports">
+          <section class="operations-command result-surface">
+            <div>
+              <span class="eyebrow">Decision layer</span>
+              <h2>Reports</h2>
+              <p>
+                Deterministic decisions generated from completed analyses. Reports
+                hold actions, severities and citations; AI explanation is optional.
+              </p>
+            </div>
+            <div class="operations-actions">
+              <button class="button button-secondary" id="refresh-reports" type="button">
+                Refresh
+              </button>
+              <button class="button button-primary" id="reports-new-analysis" type="button">
+                Build from analysis
+              </button>
+            </div>
+          </section>
+
+          <div class="reports-layout">
+            <section class="result-surface reports-list-panel">
+              <div class="section-heading compact">
+                <div>
+                  <h2>Decision reports</h2>
+                  <p>Click a report to inspect its actions and cited figures.</p>
+                </div>
+              </div>
+              <div class="reports-list" id="reports-list">
+                <p class="history-empty">Connect to Atlas to load reports.</p>
+              </div>
+            </section>
+
+            <section class="result-surface report-detail-panel">
+              <div class="portfolio-detail-empty" id="report-detail-empty">
+                <span class="empty-mark" aria-hidden="true">
+                  <svg viewBox="0 0 48 48">
+                    <path d="M14 6h16l6 6v30H14z" />
+                    <path d="M30 6v8h8M19 21h14M19 27h14M19 33h9" />
+                  </svg>
+                </span>
+                <h2>Select a report</h2>
+                <p>Open the current decision, actions and citations.</p>
+              </div>
+              <div class="is-hidden" id="report-detail-content">
+                <div class="portfolio-detail-heading">
+                  <div>
+                    <span class="eyebrow" id="report-detail-meta">—</span>
+                    <h2 id="report-detail-headline">—</h2>
+                    <p id="report-detail-subtitle">—</p>
+                  </div>
+                  <button class="button button-primary" id="report-detail-open-analysis" type="button">
+                    Open analysis
+                  </button>
+                </div>
+                <div class="report-columns">
+                  <div class="report-figures">
+                    <h3>Key figures</h3>
+                    <ul id="report-detail-figures"></ul>
+                  </div>
+                  <div class="report-figures">
+                    <h3>Drivers</h3>
+                    <ul id="report-detail-drivers"></ul>
+                  </div>
+                </div>
+                <ul class="report-actions" id="report-detail-actions"></ul>
               </div>
             </section>
           </div>

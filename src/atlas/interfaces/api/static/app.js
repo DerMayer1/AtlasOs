@@ -6,6 +6,9 @@ const state = {
   macroJobId: sessionStorage.getItem("atlas_macro_job") || null,
   macroData: null,
   portfolios: [],
+  analyses: [],
+  reports: [],
+  selectedReport: null,
   selectedPortfolioId: sessionStorage.getItem("atlas_portfolio_id") || null,
   selectedPortfolio: null,
   companies: [
@@ -118,6 +121,26 @@ const elements = {
   overviewDecisionList: document.querySelector("#overview-decision-list"),
   overviewRefresh: document.querySelector("#overview-refresh"),
   overviewShortcuts: document.querySelectorAll(".overview-shortcut"),
+  analysesPage: document.querySelector("#analyses"),
+  analysesTableBody: document.querySelector("#analyses-table-body"),
+  analysisEngineFilter: document.querySelector("#analysis-engine-filter"),
+  analysisStatusFilter: document.querySelector("#analysis-status-filter"),
+  analysisPortfolioFilter: document.querySelector("#analysis-portfolio-filter"),
+  refreshAnalyses: document.querySelector("#refresh-analyses"),
+  newAnalysis: document.querySelector("#new-analysis"),
+  reportsPage: document.querySelector("#reports"),
+  reportsList: document.querySelector("#reports-list"),
+  refreshReports: document.querySelector("#refresh-reports"),
+  reportsNewAnalysis: document.querySelector("#reports-new-analysis"),
+  reportDetailEmpty: document.querySelector("#report-detail-empty"),
+  reportDetailContent: document.querySelector("#report-detail-content"),
+  reportDetailMeta: document.querySelector("#report-detail-meta"),
+  reportDetailHeadline: document.querySelector("#report-detail-headline"),
+  reportDetailSubtitle: document.querySelector("#report-detail-subtitle"),
+  reportDetailOpenAnalysis: document.querySelector("#report-detail-open-analysis"),
+  reportDetailFigures: document.querySelector("#report-detail-figures"),
+  reportDetailDrivers: document.querySelector("#report-detail-drivers"),
+  reportDetailActions: document.querySelector("#report-detail-actions"),
   impairmentPage: document.querySelector("#impairment"),
   portfoliosPage: document.querySelector("#portfolios"),
   macroPage: document.querySelector("#macro-monitor"),
@@ -165,6 +188,14 @@ const PAGE_COPY = {
   portfolios: {
     title: "Portfolios",
     subtitle: "Versioned financial inputs and reproducible analysis context.",
+  },
+  analyses: {
+    title: "Analyses",
+    subtitle: "Operational run history across engines, portfolios and snapshots.",
+  },
+  reports: {
+    title: "Reports",
+    subtitle: "Decision reports, actions and cited evidence from completed runs.",
   },
   "macro-monitor": {
     title: "Macro Monitor",
@@ -315,6 +346,8 @@ function hideNotice() {
 function showPage(page) {
   const target = PAGE_COPY[page] ? page : "overview";
   elements.overviewPage.classList.toggle("is-hidden", target !== "overview");
+  elements.analysesPage.classList.toggle("is-hidden", target !== "analyses");
+  elements.reportsPage.classList.toggle("is-hidden", target !== "reports");
   elements.impairmentPage.classList.toggle("is-hidden", target !== "impairment");
   elements.portfoliosPage.classList.toggle("is-hidden", target !== "portfolios");
   elements.macroPage.classList.toggle("is-hidden", target !== "macro-monitor");
@@ -324,6 +357,12 @@ function showPage(page) {
   }
   if (target === "overview") {
     loadOverview();
+  }
+  if (target === "analyses") {
+    loadAnalysesPage();
+  }
+  if (target === "reports") {
+    loadReportsPage();
   }
   elements.navItems.forEach((item) => {
     item.classList.toggle("is-active", item.dataset.page === target);
@@ -717,6 +756,7 @@ async function loadHistory({ quiet = false } = {}) {
   try {
     const response = await api("/analyses?limit=10");
     const body = await response.json();
+    state.analyses = body.analyses;
     renderHistory(body.analyses);
     return true;
   } catch (error) {
@@ -729,6 +769,309 @@ async function loadHistory({ quiet = false } = {}) {
     }
     return false;
   }
+}
+
+async function loadAnalysesPage({ quiet = false } = {}) {
+  if (!state.apiKey) {
+    renderAnalysesTable([]);
+    return false;
+  }
+  try {
+    const [analysesRes, portfoliosRes] = await Promise.all([
+      api("/analyses?limit=100"),
+      api("/portfolios?limit=200"),
+    ]);
+    state.analyses = (await analysesRes.json()).analyses;
+    state.portfolios = (await portfoliosRes.json()).portfolios;
+    populateAnalysisPortfolioFilter();
+    renderAnalysesTable(state.analyses);
+    return true;
+  } catch (error) {
+    renderAnalysesError(`Unable to load analyses: ${error.message}`);
+    if (!quiet) {
+      showNotice(error.message, "error");
+    }
+    return false;
+  }
+}
+
+function populateAnalysisPortfolioFilter() {
+  const previous = elements.analysisPortfolioFilter.value;
+  elements.analysisPortfolioFilter.replaceChildren();
+  const all = document.createElement("option");
+  all.value = "";
+  all.textContent = "All portfolios";
+  elements.analysisPortfolioFilter.append(all);
+  state.portfolios.forEach((portfolio) => {
+    const option = document.createElement("option");
+    option.value = portfolio.portfolio_id;
+    option.textContent = portfolio.name;
+    elements.analysisPortfolioFilter.append(option);
+  });
+  elements.analysisPortfolioFilter.value = state.portfolios.some(
+    (portfolio) => portfolio.portfolio_id === previous,
+  )
+    ? previous
+    : "";
+}
+
+function renderAnalysesError(message) {
+  elements.analysesTableBody.replaceChildren();
+  const row = document.createElement("tr");
+  const cell = document.createElement("td");
+  cell.colSpan = 7;
+  cell.textContent = message;
+  row.append(cell);
+  elements.analysesTableBody.append(row);
+}
+
+function filteredAnalyses(analyses) {
+  const engine = elements.analysisEngineFilter.value;
+  const status = elements.analysisStatusFilter.value;
+  const portfolio = elements.analysisPortfolioFilter.value;
+  return analyses.filter(
+    (analysis) =>
+      (!engine || analysis.engine === engine) &&
+      (!status || analysis.status === status) &&
+      (!portfolio || analysis.portfolio_id === portfolio),
+  );
+}
+
+function renderAnalysesTable(analyses) {
+  const rows = filteredAnalyses(analyses);
+  elements.analysesTableBody.replaceChildren();
+  if (!rows.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 7;
+    cell.textContent = state.apiKey
+      ? "No analyses match the selected filters."
+      : "Connect to Atlas to load analyses.";
+    row.append(cell);
+    elements.analysesTableBody.append(row);
+    return;
+  }
+
+  rows.forEach((analysis) => {
+    const row = document.createElement("tr");
+    const run = document.createElement("td");
+    const runButton = document.createElement("button");
+    runButton.type = "button";
+    runButton.className = "table-link";
+    runButton.textContent = analysis.job_id;
+    runButton.addEventListener("click", () => openAnalysis(analysis.job_id));
+    run.append(runButton);
+
+    const engine = document.createElement("td");
+    engine.textContent =
+      analysis.engine === "macro_monitor" ? "Macro Monitor" : "Impairment";
+
+    const portfolio = document.createElement("td");
+    portfolio.textContent = analysis.portfolio_name || "—";
+
+    const status = document.createElement("td");
+    const statusBadge = document.createElement("span");
+    statusBadge.className = `status-badge is-${analysis.status}`;
+    statusBadge.textContent = capitalize(analysis.status);
+    status.append(statusBadge);
+
+    const outcome = document.createElement("td");
+    if (analysis.engine === "macro_monitor") {
+      outcome.textContent =
+        analysis.stress_index == null
+          ? "—"
+          : `Stress ${Number(analysis.stress_index).toFixed(2)}`;
+    } else {
+      outcome.textContent =
+        analysis.portfolio_mean_p_impairment == null
+          ? "—"
+          : percent(analysis.portfolio_mean_p_impairment);
+      if (analysis.portfolio_mean_p_impairment != null) {
+        outcome.className = "risk-value";
+      }
+    }
+
+    const created = document.createElement("td");
+    created.textContent = formatDateTime(analysis.created_at);
+
+    const actions = document.createElement("td");
+    actions.className = "table-actions";
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "text-button";
+    open.textContent = "Open";
+    open.addEventListener("click", () => openAnalysis(analysis.job_id));
+    actions.append(open);
+    if (analysis.status === "succeeded") {
+      const report = document.createElement("button");
+      report.type = "button";
+      report.className = "text-button";
+      report.textContent = "Report";
+      report.addEventListener("click", () => buildReportForAnalysis(analysis.job_id));
+      actions.append(report);
+    }
+
+    row.append(run, engine, portfolio, status, outcome, created, actions);
+    elements.analysesTableBody.append(row);
+  });
+}
+
+async function buildReportForAnalysis(jobId) {
+  try {
+    const response = await api(`/analyses/${jobId}/report`, { method: "POST" });
+    const report = await response.json();
+    showNotice("Decision report ready.", "success");
+    await loadReportsPage({ quiet: true, selectAnalysisId: jobId });
+    renderReportDetail(report);
+    showPage("reports");
+    history.pushState(null, "", "#reports");
+  } catch (error) {
+    showNotice(error.message, "error");
+  }
+}
+
+async function loadReportsPage({ quiet = false, selectAnalysisId = null } = {}) {
+  if (!state.apiKey) {
+    renderReportsList([]);
+    return false;
+  }
+  try {
+    const response = await api("/reports?limit=100");
+    state.reports = (await response.json()).reports;
+    renderReportsList(state.reports);
+    const selectedAnalysisId =
+      selectAnalysisId ||
+      state.selectedReport?.analysis_id ||
+      state.selectedReport?.run_id;
+    const target = selectedAnalysisId
+      ? state.reports.find((report) => report.analysis_id === selectedAnalysisId)
+      : null;
+    if (target) {
+      await inspectReport(target.analysis_id);
+    } else if (state.reports.length) {
+      await inspectReport(state.reports[0].analysis_id);
+    } else if (!state.reports.length) {
+      clearReportDetail();
+    }
+    return true;
+  } catch (error) {
+    renderReportsList([]);
+    clearReportDetail();
+    if (!quiet) {
+      showNotice(`Unable to load reports: ${error.message}`, "error");
+    }
+    return false;
+  }
+}
+
+function renderReportsList(reports) {
+  elements.reportsList.replaceChildren();
+  if (!reports.length) {
+    const empty = document.createElement("p");
+    empty.className = "history-empty";
+    empty.textContent = state.apiKey
+      ? "No reports built yet."
+      : "Connect to Atlas to load reports.";
+    elements.reportsList.append(empty);
+    return;
+  }
+
+  reports.forEach((report) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = `report-list-item is-${report.max_severity}`;
+    item.classList.toggle(
+      "is-selected",
+      (state.selectedReport?.analysis_id || state.selectedReport?.run_id) ===
+        report.analysis_id,
+    );
+    item.addEventListener("click", () => inspectReport(report.analysis_id));
+
+    const main = document.createElement("span");
+    const headline = document.createElement("strong");
+    headline.textContent = report.headline;
+    const meta = document.createElement("small");
+    meta.textContent = `${report.portfolio_name || report.engine} · ${relativeTime(
+      report.created_at,
+    )}`;
+    main.append(headline, meta);
+
+    const badge = document.createElement("span");
+    badge.className = `overview-decision-badge is-${report.max_severity}`;
+    badge.textContent = report.action_count
+      ? `${report.action_count} · ${capitalize(report.max_severity)}`
+      : "No actions";
+    item.append(main, badge);
+    elements.reportsList.append(item);
+  });
+}
+
+async function inspectReport(analysisId) {
+  try {
+    const response = await api(`/analyses/${analysisId}/report`);
+    const report = await response.json();
+    renderReportDetail(report);
+  } catch (error) {
+    showNotice(`Unable to load report: ${error.message}`, "error");
+  }
+}
+
+function clearReportDetail() {
+  elements.reportDetailEmpty.classList.remove("is-hidden");
+  elements.reportDetailContent.classList.add("is-hidden");
+  state.selectedReport = null;
+}
+
+function renderReportDetail(report) {
+  state.selectedReport = report;
+  elements.reportDetailEmpty.classList.add("is-hidden");
+  elements.reportDetailContent.classList.remove("is-hidden");
+  elements.reportDetailMeta.textContent =
+    `${report.engine} · ${report.run_id} · ${report.snapshot_id}`;
+  elements.reportDetailHeadline.textContent = report.headline;
+  elements.reportDetailSubtitle.textContent =
+    report.previous_run_id
+      ? `Compared with ${report.previous_run_id}`
+      : "Current deterministic decision report";
+  elements.reportDetailOpenAnalysis.onclick = () => openAnalysis(report.run_id);
+  renderReportFigures(elements.reportDetailFigures, report.run_id, report.key_figures);
+  renderReportFigures(elements.reportDetailDrivers, report.run_id, report.risk_drivers);
+  renderReportActions(elements.reportDetailActions, report);
+  renderReportsList(state.reports);
+}
+
+function renderReportActions(target, report) {
+  target.replaceChildren();
+  if (!report.actions.length) {
+    const empty = document.createElement("li");
+    empty.className = "report-action-empty";
+    empty.textContent = "No actions flagged for this report.";
+    target.append(empty);
+    return;
+  }
+  report.actions.forEach((action) => {
+    const item = document.createElement("li");
+    item.className = `report-action is-${action.severity}`;
+    const head = document.createElement("div");
+    head.className = "report-action-head";
+    const badge = document.createElement("span");
+    badge.className = "report-action-severity";
+    badge.textContent = capitalize(action.severity);
+    const title = document.createElement("span");
+    title.className = "report-action-title";
+    title.textContent = action.title;
+    head.append(badge, title);
+    const rationale = document.createElement("p");
+    rationale.className = "report-action-rationale";
+    rationale.textContent = action.rationale;
+    const cites = document.createElement("div");
+    cites.className = "report-action-citations";
+    action.citations.forEach((citation) =>
+      cites.append(citationChip(report.run_id, citation)),
+    );
+    item.append(head, rationale, cites);
+    target.append(item);
+  });
 }
 
 function renderHistory(analyses) {
@@ -1032,6 +1375,7 @@ async function buildReport() {
       method: "POST",
     });
     renderReport(await response.json());
+    await loadReportsPage({ quiet: true, selectAnalysisId: state.currentJobId });
     showNotice("Decision report ready.", "success");
   } catch (error) {
     showNotice(error.message, "error");
@@ -1339,6 +1683,9 @@ const SEVERITY_RANK = { info: 0, watch: 1, elevated: 2, critical: 3 };
 async function openAnalysis(jobId) {
   state.currentJobId = jobId;
   sessionStorage.setItem("atlas_current_job", jobId);
+  if (location.hash !== "#impairment") {
+    history.pushState(null, "", "#impairment");
+  }
   await refreshAnalysis();
 }
 
@@ -2033,6 +2380,27 @@ elements.runMacroMonitor.addEventListener("click", runMacroMonitor);
 elements.refreshAnalysis.addEventListener("click", refreshAnalysis);
 elements.refreshHistory.addEventListener("click", loadHistory);
 elements.refreshMacroHistory.addEventListener("click", loadHistory);
+elements.refreshAnalyses.addEventListener("click", () => loadAnalysesPage());
+elements.newAnalysis.addEventListener("click", () => {
+  showPage("impairment");
+  history.pushState(null, "", "#impairment");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+});
+elements.analysisEngineFilter.addEventListener("change", () =>
+  renderAnalysesTable(state.analyses),
+);
+elements.analysisStatusFilter.addEventListener("change", () =>
+  renderAnalysesTable(state.analyses),
+);
+elements.analysisPortfolioFilter.addEventListener("change", () =>
+  renderAnalysesTable(state.analyses),
+);
+elements.refreshReports.addEventListener("click", () => loadReportsPage());
+elements.reportsNewAnalysis.addEventListener("click", () => {
+  showPage("analyses");
+  history.pushState(null, "", "#analyses");
+  loadAnalysesPage();
+});
 elements.macroIndicatorSelect.addEventListener("change", () => {
   if (state.macroData) {
     renderMacroIndicatorChart(
@@ -2046,9 +2414,8 @@ elements.navItems.forEach((item) => {
     const target = item.getAttribute("href");
     showPage(item.dataset.page);
     if (
-      target === "#impairment" ||
-      target === "#portfolios" ||
-      target === "#macro-monitor"
+      target &&
+      PAGE_COPY[item.dataset.page]
     ) {
       event.preventDefault();
       history.pushState(null, "", target);
@@ -2148,7 +2515,7 @@ async function initialize() {
   } else {
     await loadPortfolios({ quiet: true });
   }
-  if (state.currentJobId) {
+  if (state.currentJobId && initialPage === "impairment") {
     await refreshAnalysis();
   }
 }
