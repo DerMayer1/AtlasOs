@@ -3,14 +3,18 @@ import react from "@vitejs/plugin-react";
 
 const apiTarget = process.env.VITE_ATLAS_API_TARGET ?? "http://127.0.0.1:8000";
 
+// Two build targets:
+// - Vercel (frontend-only preview): served at the domain root -> base "/",
+//   default "dist" output that Vercel expects.
+// - FastAPI same-origin (no CORS): served at /app -> base "/app/", built into
+//   the Python package so the API can serve it.
+const forVercel = Boolean(process.env.VERCEL);
+
 export default defineConfig({
   plugins: [react()],
-  // Built into the FastAPI package so the API serves the SPA same-origin (no
-  // CORS). Served at /app during the migration; becomes / once the React app
-  // reaches parity with the legacy vanilla UI and the latter is removed.
-  base: "/app/",
+  base: forVercel ? "/" : "/app/",
   build: {
-    outDir: "../src/atlas/interfaces/api/spa",
+    outDir: forVercel ? "dist" : "../src/atlas/interfaces/api/spa",
     emptyOutDir: true
   },
   server: {
