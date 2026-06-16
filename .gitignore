@@ -27,3 +27,5 @@ Thumbs.db
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+# Built SPA served by FastAPI at /app — produced by `pnpm build`, not committed.
+src/atlas/interfaces/api/spa/

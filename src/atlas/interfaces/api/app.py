@@ -36,6 +36,9 @@ from atlas.platform.db.models import (
 from atlas.platform.runtime.settings import Settings, get_settings
 
 STATIC_DIR = Path(__file__).with_name("static")
+# Built React SPA (frontend/ -> `pnpm build`). Served at /app during the
+# migration off the legacy vanilla UI; absent on a fresh checkout until built.
+SPA_DIR = Path(__file__).with_name("spa")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -43,6 +46,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.container = build_container(settings or get_settings())
     app.include_router(_router())
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    if SPA_DIR.exists():
+        app.mount("/app", StaticFiles(directory=SPA_DIR, html=True), name="spa")
     return app
 
 
