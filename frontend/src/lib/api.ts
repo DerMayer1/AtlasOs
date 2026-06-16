@@ -11,22 +11,9 @@ import {
 } from "./schemas";
 import { demoAnalyses, demoPortfolios, demoReportDetails, demoReports } from "./demoData";
 
-const API_KEY_STORAGE = "atlas_api_key";
 const DEMO_MODE_STORAGE = "atlas_demo_mode";
-const API_BASE_URL = import.meta.env.VITE_ATLAS_API_URL?.replace(/\/$/, "") ?? "";
-
-export function getStoredApiKey() {
-  return sessionStorage.getItem(API_KEY_STORAGE) ?? "";
-}
-
-export function setStoredApiKey(value: string) {
-  if (value.trim()) {
-    sessionStorage.setItem(API_KEY_STORAGE, value.trim());
-    setDemoMode(false);
-  } else {
-    sessionStorage.removeItem(API_KEY_STORAGE);
-  }
-}
+const DEFAULT_API_BASE_URL = import.meta.env.BASE_URL === "/" ? "/api/atlas" : "";
+const API_BASE_URL = import.meta.env.VITE_ATLAS_API_URL?.replace(/\/$/, "") ?? DEFAULT_API_BASE_URL;
 
 export function isDemoMode() {
   return sessionStorage.getItem(DEMO_MODE_STORAGE) === "1";
@@ -48,6 +35,9 @@ export function getConnectionMode() {
   if (isDemoMode()) {
     return "static-demo";
   }
+  if (API_BASE_URL.startsWith("/api/")) {
+    return "server-proxy";
+  }
   return API_BASE_URL ? "remote-api" : "same-origin-api";
 }
 
@@ -68,12 +58,8 @@ export class ApiError extends Error {
 }
 
 async function atlasFetch(path: string, init: RequestInit = {}) {
-  const apiKey = getStoredApiKey();
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
-  if (apiKey) {
-    headers.set("X-API-Key", apiKey);
-  }
   if (init.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
@@ -95,10 +81,7 @@ async function atlasFetch(path: string, init: RequestInit = {}) {
 export async function bootstrapLocalDemo() {
   try {
     const body = await atlasFetch("/demo/bootstrap", { method: "POST" });
-    if (typeof body.api_key === "string") {
-      setStoredApiKey(body.api_key);
-      setDemoMode(false);
-    }
+    setDemoMode(false);
     return body;
   } catch (error) {
     setDemoMode(true);

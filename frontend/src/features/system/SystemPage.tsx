@@ -6,8 +6,7 @@ import { Panel } from "../../components/ui/Panel";
 import { bootstrapLocalDemo, fetchHealth, getApiBaseUrl } from "../../lib/api";
 
 export function SystemPage() {
-  const { apiKey, setApiKey, clearApiKey, configured, demoMode, enableDemoMode, connectionMode } = useApiKey();
-  const [draft, setDraft] = useState(apiKey);
+  const { configured, demoMode, enableDemoMode, useBackendMode, connectionMode } = useApiKey();
   const [message, setMessage] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const health = useQuery({
@@ -22,10 +21,9 @@ export function SystemPage() {
       const body = await bootstrapLocalDemo();
       if (body.mode === "static-demo") {
         enableDemoMode();
-      } else if (typeof body.api_key === "string") {
-        setApiKey(body.api_key);
+      } else {
+        useBackendMode();
       }
-      setDraft(body.api_key ?? "");
       setMessage(`Local demo ready on snapshot ${body.snapshot_id ?? "latest"}.`);
       await queryClient.invalidateQueries();
     } catch (error) {
@@ -46,52 +44,47 @@ export function SystemPage() {
         <Metric label="Frontend" value="React + Vite" detail="TypeScript client" />
       </section>
 
-      <Panel title="API key" subtitle="Stored only in sessionStorage for local operation. No key is committed or persisted to source.">
-        <form
-          className="settings-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setApiKey(draft);
-            setMessage("API key saved.");
-            void queryClient.invalidateQueries();
-          }}
-        >
-          <label>
-            <span>Key</span>
-            <input value={draft} onChange={(event) => setDraft(event.target.value)} type="password" placeholder="atlas_..." />
-          </label>
+      <Panel title="Backend security" subtitle="Secrets stay in server-side environment variables. The browser only talks to the Atlas API or proxy.">
+        <div className="settings-form">
+          <div className="stack-list">
+            <div>
+              <strong>Browser</strong>
+              <span>No Atlas API key in sessionStorage, localStorage or bundled JavaScript.</span>
+            </div>
+            <div>
+              <strong>Runtime</strong>
+              <span>Backend and proxy credentials are loaded from .env or deployment environment variables.</span>
+            </div>
+          </div>
           <div className="connection-actions">
-            <button className="primary-button" type="submit">Save</button>
+            <button
+              className="primary-button"
+              type="button"
+              onClick={() => {
+                useBackendMode();
+                setMessage("Backend mode enabled.");
+                void queryClient.invalidateQueries();
+              }}
+            >
+              Backend mode
+            </button>
             <button className="secondary-button" type="button" onClick={localDemo}>Local demo</button>
             <button
               className="secondary-button"
               type="button"
               onClick={() => {
                 enableDemoMode();
-                setDraft("");
                 setMessage("Static demo mode enabled explicitly.");
                 void queryClient.invalidateQueries();
               }}
             >
               Static demo
             </button>
-            <button
-              className="ghost-button"
-              type="button"
-              onClick={() => {
-                clearApiKey();
-                setDraft("");
-                setMessage("API key cleared.");
-                void queryClient.invalidateQueries();
-              }}
-            >
-              Clear
-            </button>
           </div>
           {message && <p className="form-note">{message}</p>}
           <p className="form-note">Connection mode: {connectionMode}</p>
           {health.error && <p className="inline-error">{health.error instanceof Error ? health.error.message : "Health check failed."}</p>}
-        </form>
+        </div>
       </Panel>
 
       <Panel title="Stack contract" subtitle="The frontend is intentionally decoupled from the legacy static UI until we are ready to switch serving.">

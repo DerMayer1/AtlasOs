@@ -4,8 +4,7 @@ import { useApiKey } from "../../app/ApiKeyProvider";
 import { bootstrapLocalDemo, getApiBaseUrl } from "../../lib/api";
 
 export function ConnectionPanel() {
-  const { apiKey, setApiKey, clearApiKey, configured, demoMode, enableDemoMode, connectionMode } = useApiKey();
-  const [draft, setDraft] = useState(apiKey);
+  const { configured, demoMode, enableDemoMode, useBackendMode, connectionMode } = useApiKey();
   const [expanded, setExpanded] = useState(!configured);
   const [status, setStatus] = useState<string | null>(null);
   const queryClient = useQueryClient();
@@ -16,10 +15,9 @@ export function ConnectionPanel() {
       const body = await bootstrapLocalDemo();
       if (body.mode === "static-demo") {
         enableDemoMode();
-      } else if (typeof body.api_key === "string") {
-        setApiKey(body.api_key);
+      } else {
+        useBackendMode();
       }
-      setDraft(body.api_key ?? "");
       setStatus(`Local demo ready on snapshot ${body.snapshot_id ?? "latest"}.`);
       await queryClient.invalidateQueries();
     } catch (error) {
@@ -31,34 +29,28 @@ export function ConnectionPanel() {
     <section className="connection-panel" aria-label="Connection">
       <div>
         <span className="status-dot" data-state={configured ? "ready" : "blocked"} />
-        <strong>{demoMode ? "Static demo mode" : configured ? "API key configured" : "API key required"}</strong>
-        <small>{demoMode ? "No backend calls" : configured ? getApiBaseUrl() : "Read/run scope needed"}</small>
+        <strong>{demoMode ? "Static demo mode" : "Backend connected"}</strong>
+        <small>{demoMode ? "No backend calls" : getApiBaseUrl()}</small>
       </div>
       <button className="ghost-button" type="button" onClick={() => setExpanded((value) => !value)}>
-        {expanded ? "Close" : "Configure"}
+        {expanded ? "Close" : "Details"}
       </button>
       {expanded && (
-        <form
-          className="connection-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setApiKey(draft);
-            setStatus("API key stored for this browser session.");
-            void queryClient.invalidateQueries();
-          }}
-        >
-          <label>
-            <span>API key</span>
-            <input
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              placeholder="atlas_..."
-              type="password"
-            />
-          </label>
+        <div className="connection-form">
+          <p className="form-note">
+            Secrets are backend-managed. The browser never stores or sends Atlas API keys.
+          </p>
           <div className="connection-actions">
-            <button className="primary-button" type="submit">
-              Save key
+            <button
+              className="primary-button"
+              type="button"
+              onClick={() => {
+                useBackendMode();
+                setStatus("Backend mode enabled.");
+                void queryClient.invalidateQueries();
+              }}
+            >
+              Backend mode
             </button>
             <button className="secondary-button" type="button" onClick={handleBootstrap}>
               Local demo
@@ -68,29 +60,16 @@ export function ConnectionPanel() {
               type="button"
               onClick={() => {
                 enableDemoMode();
-                setDraft("");
                 setStatus("Static demo mode enabled explicitly.");
                 void queryClient.invalidateQueries();
               }}
             >
               Static demo
             </button>
-            <button
-              className="ghost-button"
-              type="button"
-              onClick={() => {
-                clearApiKey();
-                setDraft("");
-                setStatus("API key cleared.");
-                void queryClient.invalidateQueries();
-              }}
-            >
-              Clear
-            </button>
           </div>
           {status && <p className="form-note">{status}</p>}
           <p className="form-note">Connection: {connectionMode}</p>
-        </form>
+        </div>
       )}
     </section>
   );

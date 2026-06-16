@@ -287,6 +287,47 @@ def test_health_unauthenticated(client_and_keys):
     assert body["checks"]["queue"] == "in-process"
 
 
+def test_rate_limit_returns_429(tmp_path):
+    settings = Settings(
+        database_url=f"sqlite:///{tmp_path / 'rate-limit.db'}",
+        redis_url="",
+        data_dir=tmp_path / "data",
+        auto_create_schema=True,
+        rate_limit_requests_per_minute=60,
+        rate_limit_burst=2,
+    )
+    client = TestClient(create_app(settings))
+
+    assert client.get("/health").status_code == 200
+    assert client.get("/health").status_code == 200
+    limited = client.get("/health")
+
+    assert limited.status_code == 429
+    assert limited.json()["detail"] == "rate limit exceeded"
+    assert limited.headers["retry-after"]
+
+
+def test_request_body_limit_returns_413(tmp_path):
+    settings = Settings(
+        database_url=f"sqlite:///{tmp_path / 'body-limit.db'}",
+        redis_url="",
+        data_dir=tmp_path / "data",
+        auto_create_schema=True,
+        rate_limit_enabled=False,
+        max_request_body_bytes=10,
+    )
+    client = TestClient(create_app(settings))
+
+    response = client.post(
+        "/agent/ask",
+        content=b'{"question":"this body is intentionally too large"}',
+        headers={"Content-Type": "application/json", "X-API-Key": "atlas_test"},
+    )
+
+    assert response.status_code == 413
+    assert response.json()["detail"] == "request body too large"
+
+
 def test_frontend_and_static_assets_are_served(client_and_keys):
     client, *_ = client_and_keys
     page = client.get("/")

@@ -43,7 +43,7 @@ export function OverviewPage({
     return (
       <StateBlock
         title="Unable to load Atlas data"
-        detail={error instanceof Error ? error.message : "Check API key and backend status."}
+        detail={error instanceof Error ? error.message : "Check backend status and deployment environment."}
         action={<button className="primary-button" onClick={() => onNavigate("system")}>Open system</button>}
       />
     );

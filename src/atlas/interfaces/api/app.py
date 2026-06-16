@@ -24,6 +24,11 @@ from atlas.domain.engines.impairment.models import CompanyFinancialProfile
 from atlas.domain.reports.builder import build_report
 from atlas.interfaces.api.auth import SCOPE_READ, SCOPE_RUN, create_api_key, require_scope
 from atlas.interfaces.api.container import Container, build_container
+from atlas.interfaces.api.security import (
+    MaxBodySizeMiddleware,
+    RateLimitMiddleware,
+    SecurityHeadersMiddleware,
+)
 from atlas.platform.audit.snapshots import SnapshotNotFoundError
 from atlas.platform.contracts.schemas import AnalysisResult, utcnow
 from atlas.platform.db.models import (
@@ -45,6 +50,18 @@ SPA_DIR = Path(__file__).with_name("spa")
 def create_app(settings: Settings | None = None) -> FastAPI:
     resolved_settings = settings or get_settings()
     app = FastAPI(title="Atlas", version="0.1.0")
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(
+        MaxBodySizeMiddleware,
+        max_bytes=resolved_settings.max_request_body_bytes,
+    )
+    if resolved_settings.rate_limit_enabled:
+        app.add_middleware(
+            RateLimitMiddleware,
+            requests_per_minute=resolved_settings.rate_limit_requests_per_minute,
+            burst=resolved_settings.rate_limit_burst,
+            excluded_paths=("/static", "/app"),
+        )
     allowed_origins = [
         origin.strip()
         for origin in resolved_settings.cors_allowed_origins.split(",")

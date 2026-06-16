@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     # Comma-separated browser origins allowed to call the API from a separately
     # deployed frontend, e.g. https://atlas-os.vercel.app.
     cors_allowed_origins: str = ""
+    rate_limit_enabled: bool = True
+    rate_limit_requests_per_minute: int = 120
+    rate_limit_burst: int = 30
+    max_request_body_bytes: int = 1_000_000
     # Agent LLM. Empty key -> NullLLMClient -> graceful degradation (deterministic
     # planning + numbers-only narration). Set ATLAS_ANTHROPIC_API_KEY for full mode.
     anthropic_api_key: str = ""

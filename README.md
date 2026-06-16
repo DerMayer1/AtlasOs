@@ -54,9 +54,8 @@ py -3.12 -m venv .venv
 
 Open http://127.0.0.1:8000. The app opens on the **Overview** page (macro state,
 portfolio risk and decisions needing attention). The explicit local demo command
-creates the synthetic snapshot and a browser-session API key automatically. Runs
-are stored and can be reopened from **Recent analyses** without executing the
-engine again.
+creates the synthetic snapshot for local use. Runs are stored and can be
+reopened from **Recent analyses** without executing the engine again.
 
 ## React frontend prototype
 
@@ -70,9 +69,9 @@ pnpm dev
 ```
 
 Open http://127.0.0.1:5173. Vite proxies API calls to
-http://127.0.0.1:8000, so keep the FastAPI app running in another terminal. The
-React app stores the API key only in browser `sessionStorage` and can request the
-local demo bootstrap when the backend exposes `/demo/bootstrap`.
+http://127.0.0.1:8000, so keep the FastAPI app running in another terminal.
+The React app never stores Atlas API keys in browser storage or bundled
+JavaScript.
 
 For Vercel frontend-only deploys, set the project root to `frontend/` and use:
 
@@ -82,18 +81,40 @@ Build Command: pnpm build
 Output Directory: dist
 ```
 
-To connect that Vercel frontend to a real Atlas API, set this Vercel environment
-variable:
+For Vercel frontend deploys, keep secrets in server-side environment variables.
+The browser calls the included `/api/atlas/*` Vercel Function, which injects the
+Atlas API key from the deployment environment:
 
 ```text
-VITE_ATLAS_API_URL=https://your-atlas-api.example.com
+ATLAS_API_URL=https://your-atlas-api.example.com
+ATLAS_API_KEY=atlas_...
+ATLAS_PROXY_RATE_LIMIT_REQUESTS=120
+ATLAS_PROXY_RATE_LIMIT_WINDOW_MS=60000
+ATLAS_PROXY_MAX_BODY_BYTES=1000000
 ```
 
-The API deployment must allow the Vercel origin:
+`VITE_ATLAS_API_URL` is optional and must only contain a public URL/path. It is
+safe to leave unset on Vercel; the frontend defaults to `/api/atlas`.
+
+If the frontend calls the Atlas API directly instead of using the proxy, the API
+deployment must allow the Vercel origin:
 
 ```text
 ATLAS_CORS_ALLOWED_ORIGINS=https://your-frontend.vercel.app
 ```
+
+The FastAPI backend also ships with a dependency-free defensive baseline:
+
+```text
+ATLAS_RATE_LIMIT_ENABLED=true
+ATLAS_RATE_LIMIT_REQUESTS_PER_MINUTE=120
+ATLAS_RATE_LIMIT_BURST=30
+ATLAS_MAX_REQUEST_BODY_BYTES=1000000
+```
+
+This protects single-instance deployments and local demos. For multi-instance
+production, put a managed edge/WAF or Redis-backed limiter in front of the API so
+limits are shared across workers and regions.
 
 > Upgrading an existing dev DB: `auto_create_schema` only creates missing
 > tables, it never alters existing ones. After a schema change, recreate the

@@ -1,10 +1,8 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
-import { getConnectionMode, getStoredApiKey, isDemoMode, setDemoMode, setStoredApiKey } from "../lib/api";
+import { getConnectionMode, isDemoMode, setDemoMode } from "../lib/api";
 
 type ApiKeyContextValue = {
-  apiKey: string;
-  setApiKey: (value: string) => void;
-  clearApiKey: () => void;
+  useBackendMode: () => void;
   enableDemoMode: () => void;
   configured: boolean;
   demoMode: boolean;
@@ -14,30 +12,23 @@ type ApiKeyContextValue = {
 const ApiKeyContext = createContext<ApiKeyContextValue | null>(null);
 
 export function ApiKeyProvider({ children }: { children: ReactNode }) {
-  const [apiKey, setApiKeyState] = useState(getStoredApiKey);
+  const [demoMode, setDemoModeState] = useState(isDemoMode);
 
   const value = useMemo<ApiKeyContextValue>(
     () => ({
-      apiKey,
-      configured: Boolean(apiKey) || isDemoMode(),
-      demoMode: isDemoMode(),
+      configured: true,
+      demoMode,
       connectionMode: getConnectionMode(),
-      setApiKey: (next: string) => {
-        setStoredApiKey(next);
-        setApiKeyState(next.trim());
+      useBackendMode: () => {
+        setDemoMode(false);
+        setDemoModeState(false);
       },
       enableDemoMode: () => {
-        setStoredApiKey("");
         setDemoMode(true);
-        setApiKeyState("");
-      },
-      clearApiKey: () => {
-        setStoredApiKey("");
-        setDemoMode(false);
-        setApiKeyState("");
+        setDemoModeState(true);
       }
     }),
-    [apiKey]
+    [demoMode]
   );
 
   return <ApiKeyContext.Provider value={value}>{children}</ApiKeyContext.Provider>;

@@ -49,7 +49,7 @@ const pageCopy: Record<RouteId, { title: string; subtitle: string }> = {
   },
   system: {
     title: "System",
-    subtitle: "Local connection, API key and runtime status."
+    subtitle: "Backend connection, runtime status and security posture."
   }
 };
 
@@ -87,7 +87,7 @@ export function AppShell({
         </nav>
         <div className="sidebar-footer">
           <span>AtlasOS v0.5</span>
-          <strong>{configured ? "Connected" : "Key required"}</strong>
+          <strong>{configured ? "Connected" : "Offline"}</strong>
         </div>
       </aside>
       <main className="main">
