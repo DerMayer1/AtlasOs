@@ -13,6 +13,7 @@ import { demoAnalyses, demoPortfolios, demoReportDetails, demoReports } from "./
 
 const API_KEY_STORAGE = "atlas_api_key";
 const DEMO_MODE_STORAGE = "atlas_demo_mode";
+const API_BASE_URL = import.meta.env.VITE_ATLAS_API_URL?.replace(/\/$/, "") ?? "";
 
 export function getStoredApiKey() {
   return sessionStorage.getItem(API_KEY_STORAGE) ?? "";
@@ -21,16 +22,17 @@ export function getStoredApiKey() {
 export function setStoredApiKey(value: string) {
   if (value.trim()) {
     sessionStorage.setItem(API_KEY_STORAGE, value.trim());
+    setDemoMode(false);
   } else {
     sessionStorage.removeItem(API_KEY_STORAGE);
   }
 }
 
 export function isDemoMode() {
-  return sessionStorage.getItem(DEMO_MODE_STORAGE) === "1" || shouldDefaultToDemo();
+  return sessionStorage.getItem(DEMO_MODE_STORAGE) === "1";
 }
 
-function setDemoMode(value: boolean) {
+export function setDemoMode(value: boolean) {
   if (value) {
     sessionStorage.setItem(DEMO_MODE_STORAGE, "1");
   } else {
@@ -38,9 +40,22 @@ function setDemoMode(value: boolean) {
   }
 }
 
-function shouldDefaultToDemo() {
-  const host = window.location.hostname;
-  return !getStoredApiKey() && host !== "localhost" && host !== "127.0.0.1";
+export function getApiBaseUrl() {
+  return API_BASE_URL || window.location.origin;
+}
+
+export function getConnectionMode() {
+  if (isDemoMode()) {
+    return "static-demo";
+  }
+  return API_BASE_URL ? "remote-api" : "same-origin-api";
+}
+
+function apiUrl(path: string) {
+  if (path.startsWith("http://") || path.startsWith("https://")) {
+    return path;
+  }
+  return `${API_BASE_URL}${path}`;
 }
 
 export class ApiError extends Error {
@@ -63,7 +78,7 @@ async function atlasFetch(path: string, init: RequestInit = {}) {
     headers.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(path, { ...init, headers });
+  const response = await fetch(apiUrl(path), { ...init, headers });
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
     try {
@@ -87,9 +102,8 @@ export async function bootstrapLocalDemo() {
     return body;
   } catch (error) {
     setDemoMode(true);
-    setStoredApiKey("atlas_demo_static");
     return {
-      api_key: "atlas_demo_static",
+      api_key: "",
       mode: "static-demo",
       snapshot_id: "snap_static_demo",
       degraded: true,

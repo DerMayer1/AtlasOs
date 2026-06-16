@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
@@ -42,8 +43,22 @@ SPA_DIR = Path(__file__).with_name("spa")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
+    resolved_settings = settings or get_settings()
     app = FastAPI(title="Atlas", version="0.1.0")
-    app.state.container = build_container(settings or get_settings())
+    allowed_origins = [
+        origin.strip()
+        for origin in resolved_settings.cors_allowed_origins.split(",")
+        if origin.strip()
+    ]
+    if allowed_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=allowed_origins,
+            allow_credentials=False,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+    app.state.container = build_container(resolved_settings)
     app.include_router(_router())
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     if SPA_DIR.exists():

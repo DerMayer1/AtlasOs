@@ -82,6 +82,19 @@ Build Command: pnpm build
 Output Directory: dist
 ```
 
+To connect that Vercel frontend to a real Atlas API, set this Vercel environment
+variable:
+
+```text
+VITE_ATLAS_API_URL=https://your-atlas-api.example.com
+```
+
+The API deployment must allow the Vercel origin:
+
+```text
+ATLAS_CORS_ALLOWED_ORIGINS=https://your-frontend.vercel.app
+```
+
 > Upgrading an existing dev DB: `auto_create_schema` only creates missing
 > tables, it never alters existing ones. After a schema change, recreate the
 > local SQLite file (`del var\atlas.db`) or run `alembic upgrade head` — otherwise

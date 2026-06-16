@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     # Explicit local-only mode. Enables the unauthenticated demo bootstrap
     # endpoint used by `python -m atlas.interfaces.cli demo`.
     demo_mode: bool = False
+    # Comma-separated browser origins allowed to call the API from a separately
+    # deployed frontend, e.g. https://atlas-os.vercel.app.
+    cors_allowed_origins: str = ""
     # Agent LLM. Empty key -> NullLLMClient -> graceful degradation (deterministic
     # planning + numbers-only narration). Set ATLAS_ANTHROPIC_API_KEY for full mode.
     anthropic_api_key: str = ""

@@ -1,10 +1,10 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useApiKey } from "../../app/ApiKeyProvider";
-import { bootstrapLocalDemo } from "../../lib/api";
+import { bootstrapLocalDemo, getApiBaseUrl } from "../../lib/api";
 
 export function ConnectionPanel() {
-  const { apiKey, setApiKey, clearApiKey, configured } = useApiKey();
+  const { apiKey, setApiKey, clearApiKey, configured, demoMode, enableDemoMode, connectionMode } = useApiKey();
   const [draft, setDraft] = useState(apiKey);
   const [expanded, setExpanded] = useState(!configured);
   const [status, setStatus] = useState<string | null>(null);
@@ -14,7 +14,9 @@ export function ConnectionPanel() {
     setStatus("Preparing local demo workspace...");
     try {
       const body = await bootstrapLocalDemo();
-      if (typeof body.api_key === "string") {
+      if (body.mode === "static-demo") {
+        enableDemoMode();
+      } else if (typeof body.api_key === "string") {
         setApiKey(body.api_key);
       }
       setDraft(body.api_key ?? "");
@@ -29,8 +31,8 @@ export function ConnectionPanel() {
     <section className="connection-panel" aria-label="Connection">
       <div>
         <span className="status-dot" data-state={configured ? "ready" : "blocked"} />
-        <strong>{configured ? "API key configured" : "API key required"}</strong>
-        <small>{configured ? "Same-origin API" : "Read/run scope needed"}</small>
+        <strong>{demoMode ? "Static demo mode" : configured ? "API key configured" : "API key required"}</strong>
+        <small>{demoMode ? "No backend calls" : configured ? getApiBaseUrl() : "Read/run scope needed"}</small>
       </div>
       <button className="ghost-button" type="button" onClick={() => setExpanded((value) => !value)}>
         {expanded ? "Close" : "Configure"}
@@ -62,6 +64,18 @@ export function ConnectionPanel() {
               Local demo
             </button>
             <button
+              className="secondary-button"
+              type="button"
+              onClick={() => {
+                enableDemoMode();
+                setDraft("");
+                setStatus("Static demo mode enabled explicitly.");
+                void queryClient.invalidateQueries();
+              }}
+            >
+              Static demo
+            </button>
+            <button
               className="ghost-button"
               type="button"
               onClick={() => {
@@ -75,6 +89,7 @@ export function ConnectionPanel() {
             </button>
           </div>
           {status && <p className="form-note">{status}</p>}
+          <p className="form-note">Connection: {connectionMode}</p>
         </form>
       )}
     </section>

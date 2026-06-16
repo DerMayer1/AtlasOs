@@ -3,10 +3,10 @@ import { useState } from "react";
 import { useApiKey } from "../../app/ApiKeyProvider";
 import { Metric } from "../../components/ui/Metric";
 import { Panel } from "../../components/ui/Panel";
-import { bootstrapLocalDemo, fetchHealth } from "../../lib/api";
+import { bootstrapLocalDemo, fetchHealth, getApiBaseUrl } from "../../lib/api";
 
 export function SystemPage() {
-  const { apiKey, setApiKey, clearApiKey, configured } = useApiKey();
+  const { apiKey, setApiKey, clearApiKey, configured, demoMode, enableDemoMode, connectionMode } = useApiKey();
   const [draft, setDraft] = useState(apiKey);
   const [message, setMessage] = useState<string | null>(null);
   const queryClient = useQueryClient();
@@ -20,7 +20,9 @@ export function SystemPage() {
     setMessage("Preparing local demo workspace...");
     try {
       const body = await bootstrapLocalDemo();
-      if (typeof body.api_key === "string") {
+      if (body.mode === "static-demo") {
+        enableDemoMode();
+      } else if (typeof body.api_key === "string") {
         setApiKey(body.api_key);
       }
       setDraft(body.api_key ?? "");
@@ -34,7 +36,12 @@ export function SystemPage() {
   return (
     <div className="system-grid">
       <section className="executive-strip">
-        <Metric label="Connection" value={configured ? "Configured" : "Missing"} detail="Browser session storage" tone={configured ? "good" : "watch"} />
+        <Metric
+          label="Connection"
+          value={demoMode ? "Demo" : configured ? "Configured" : "Missing"}
+          detail={demoMode ? "Static demo mode" : getApiBaseUrl()}
+          tone={configured ? "good" : "watch"}
+        />
         <Metric label="Health" value={health.data?.status ?? (health.isError ? "Unavailable" : "-")} detail={health.isFetching ? "Checking..." : "Runtime endpoint"} />
         <Metric label="Frontend" value="React + Vite" detail="TypeScript client" />
       </section>
@@ -57,6 +64,18 @@ export function SystemPage() {
             <button className="primary-button" type="submit">Save</button>
             <button className="secondary-button" type="button" onClick={localDemo}>Local demo</button>
             <button
+              className="secondary-button"
+              type="button"
+              onClick={() => {
+                enableDemoMode();
+                setDraft("");
+                setMessage("Static demo mode enabled explicitly.");
+                void queryClient.invalidateQueries();
+              }}
+            >
+              Static demo
+            </button>
+            <button
               className="ghost-button"
               type="button"
               onClick={() => {
@@ -70,6 +89,7 @@ export function SystemPage() {
             </button>
           </div>
           {message && <p className="form-note">{message}</p>}
+          <p className="form-note">Connection mode: {connectionMode}</p>
           {health.error && <p className="inline-error">{health.error instanceof Error ? health.error.message : "Health check failed."}</p>}
         </form>
       </Panel>
