@@ -38,7 +38,7 @@ export function App() {
         <AppShell route={route} onNavigate={navigate}>
           {route === "overview" && <OverviewPage onNavigate={navigate} />}
           {route === "analyses" && <AnalysesPage onNavigate={navigate} />}
-          {route === "reports" && <ReportsPage onNavigate={navigate} />}
+          {route === "reports" && <ReportsPage />}
           {route === "macro-monitor" && <MacroPage />}
           {route === "system" && <SystemPage />}
           {route === "impairment" && <AnalysesPage onNavigate={navigate} engineFilter="impairment" />}
