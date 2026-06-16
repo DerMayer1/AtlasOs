@@ -51,6 +51,38 @@ export function OverviewPage({
 
   return (
     <div className="overview-grid">
+      <section className="centurion-brief">
+        <div className="brief-copy">
+          <span>Executive investment view</span>
+          <h2>{topReport ? topReport.headline : "No committee memo has been built yet."}</h2>
+          <p>
+            Atlas consolidates impairment risk, macro regime pressure and reportable actions
+            into a single boardroom surface. Numbers remain deterministic; the presentation
+            is designed for decision review.
+          </p>
+          <div className="brief-actions">
+            <button className="primary-button" onClick={() => onNavigate("reports")}>
+              Open reports
+            </button>
+            <button className="secondary-button" onClick={() => onNavigate("analyses")}>
+              Review ledger
+            </button>
+          </div>
+        </div>
+        <div className="brief-card" aria-label="Current risk card">
+          <div className="brief-card-top">
+            <span>ATLAS</span>
+            <span>Risk Committee</span>
+          </div>
+          <strong>{percent(impairment?.portfolio_mean_p_impairment)}</strong>
+          <small>Mean impairment probability</small>
+          <div className="brief-card-footer">
+            <span>{macro?.macro_regime ? titleCase(macro.macro_regime) : "No macro run"}</span>
+            <span>{totalActions(reports)} action(s)</span>
+          </div>
+        </div>
+      </section>
+
       <section className="executive-strip">
         <Metric
           label="Mean impairment risk"
@@ -85,8 +117,8 @@ export function OverviewPage({
             <LineChart data={chartData} margin={{ left: 6, right: 14, top: 12, bottom: 8 }}>
               <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 10 }} />
               <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 10 }} width={36} />
-              <Tooltip contentStyle={{ borderRadius: 0, border: "1px solid #d8d3c8", fontSize: 12 }} />
-              <Line type="monotone" dataKey="risk" stroke="#315c45" strokeWidth={2} dot={{ r: 3 }} />
+              <Tooltip contentStyle={{ borderRadius: 0, border: "1px solid #c7b98f", fontSize: 12 }} />
+              <Line type="monotone" dataKey="risk" stroke="#9b8353" strokeWidth={2.4} dot={{ r: 3 }} />
             </LineChart>
           </ResponsiveContainer>
         ) : (
