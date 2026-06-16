@@ -65,14 +65,22 @@ the FastAPI server during development:
 
 ```powershell
 cd frontend
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 Open http://127.0.0.1:5173. Vite proxies API calls to
 http://127.0.0.1:8000, so keep the FastAPI app running in another terminal. The
 React app stores the API key only in browser `sessionStorage` and can request the
 local demo bootstrap when the backend exposes `/demo/bootstrap`.
+
+For Vercel frontend-only deploys, set the project root to `frontend/` and use:
+
+```text
+Install Command: pnpm install --frozen-lockfile
+Build Command: pnpm build
+Output Directory: dist
+```
 
 > Upgrading an existing dev DB: `auto_create_schema` only creates missing
 > tables, it never alters existing ones. After a schema change, recreate the
