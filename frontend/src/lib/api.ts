@@ -9,8 +9,10 @@ import {
   type ReportDetail,
   type ReportSummary
 } from "./schemas";
+import { demoAnalyses, demoPortfolios, demoReportDetails, demoReports } from "./demoData";
 
 const API_KEY_STORAGE = "atlas_api_key";
+const DEMO_MODE_STORAGE = "atlas_demo_mode";
 
 export function getStoredApiKey() {
   return sessionStorage.getItem(API_KEY_STORAGE) ?? "";
@@ -22,6 +24,23 @@ export function setStoredApiKey(value: string) {
   } else {
     sessionStorage.removeItem(API_KEY_STORAGE);
   }
+}
+
+export function isDemoMode() {
+  return sessionStorage.getItem(DEMO_MODE_STORAGE) === "1" || shouldDefaultToDemo();
+}
+
+function setDemoMode(value: boolean) {
+  if (value) {
+    sessionStorage.setItem(DEMO_MODE_STORAGE, "1");
+  } else {
+    sessionStorage.removeItem(DEMO_MODE_STORAGE);
+  }
+}
+
+function shouldDefaultToDemo() {
+  const host = window.location.hostname;
+  return !getStoredApiKey() && host !== "localhost" && host !== "127.0.0.1";
 }
 
 export class ApiError extends Error {
@@ -59,29 +78,55 @@ async function atlasFetch(path: string, init: RequestInit = {}) {
 }
 
 export async function bootstrapLocalDemo() {
-  const body = await atlasFetch("/demo/bootstrap", { method: "POST" });
-  if (typeof body.api_key === "string") {
-    setStoredApiKey(body.api_key);
+  try {
+    const body = await atlasFetch("/demo/bootstrap", { method: "POST" });
+    if (typeof body.api_key === "string") {
+      setStoredApiKey(body.api_key);
+      setDemoMode(false);
+    }
+    return body;
+  } catch (error) {
+    setDemoMode(true);
+    setStoredApiKey("atlas_demo_static");
+    return {
+      api_key: "atlas_demo_static",
+      mode: "static-demo",
+      snapshot_id: "snap_static_demo",
+      degraded: true,
+      reason: error instanceof Error ? error.message : "Backend unavailable"
+    };
   }
-  return body;
 }
 
 export async function fetchAnalyses(limit = 100): Promise<Analysis[]> {
+  if (isDemoMode()) {
+    return demoAnalyses.slice(0, limit);
+  }
   const body = await atlasFetch(`/analyses?limit=${limit}`);
   return analysesResponseSchema.parse(body).analyses;
 }
 
 export async function fetchReports(limit = 100): Promise<ReportSummary[]> {
+  if (isDemoMode()) {
+    return demoReports.slice(0, limit);
+  }
   const body = await atlasFetch(`/reports?limit=${limit}`);
   return reportsResponseSchema.parse(body).reports;
 }
 
 export async function fetchReport(analysisId: string): Promise<ReportDetail> {
+  if (isDemoMode()) {
+    const detail = demoReportDetails[analysisId] ?? demoReportDetails.run_ic_92f4a1c8;
+    return reportDetailSchema.parse(detail);
+  }
   const body = await atlasFetch(`/analyses/${analysisId}/report`);
   return reportDetailSchema.parse(body);
 }
 
 export async function buildReport(analysisId: string): Promise<ReportDetail> {
+  if (isDemoMode()) {
+    return fetchReport(analysisId);
+  }
   const body = await atlasFetch(`/analyses/${analysisId}/report`, {
     method: "POST"
   });
@@ -89,11 +134,21 @@ export async function buildReport(analysisId: string): Promise<ReportDetail> {
 }
 
 export async function fetchPortfolios(limit = 200): Promise<Portfolio[]> {
+  if (isDemoMode()) {
+    return demoPortfolios.slice(0, limit);
+  }
   const body = await atlasFetch(`/portfolios?limit=${limit}`);
   return portfoliosResponseSchema.parse(body).portfolios;
 }
 
 export async function fetchHealth() {
+  if (isDemoMode()) {
+    return {
+      status: "static-demo",
+      ok: true,
+      version: "frontend-only"
+    };
+  }
   const body = await atlasFetch("/health");
   return healthSchema.parse(body);
 }

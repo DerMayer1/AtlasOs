@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
-import { getStoredApiKey, setStoredApiKey } from "../lib/api";
+import { getStoredApiKey, isDemoMode, setStoredApiKey } from "../lib/api";
 
 type ApiKeyContextValue = {
   apiKey: string;
@@ -16,7 +16,7 @@ export function ApiKeyProvider({ children }: { children: ReactNode }) {
   const value = useMemo<ApiKeyContextValue>(
     () => ({
       apiKey,
-      configured: Boolean(apiKey),
+      configured: Boolean(apiKey) || isDemoMode(),
       setApiKey: (next: string) => {
         setStoredApiKey(next);
         setApiKeyState(next.trim());
