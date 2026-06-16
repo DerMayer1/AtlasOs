@@ -58,6 +58,22 @@ creates the synthetic snapshot and a browser-session API key automatically. Runs
 are stored and can be reopened from **Recent analyses** without executing the
 engine again.
 
+## React frontend prototype
+
+The institutional React/Vite frontend lives in `frontend/` and runs alongside
+the FastAPI server during development:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Open http://127.0.0.1:5173. Vite proxies API calls to
+http://127.0.0.1:8000, so keep the FastAPI app running in another terminal. The
+React app stores the API key only in browser `sessionStorage` and can request the
+local demo bootstrap when the backend exposes `/demo/bootstrap`.
+
 > Upgrading an existing dev DB: `auto_create_schema` only creates missing
 > tables, it never alters existing ones. After a schema change, recreate the
 > local SQLite file (`del var\atlas.db`) or run `alembic upgrade head` — otherwise
