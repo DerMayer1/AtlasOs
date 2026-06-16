@@ -24,8 +24,8 @@ const routes: Array<{ id: RouteId; label: string }> = [
 
 const pageCopy: Record<RouteId, { title: string; subtitle: string }> = {
   overview: {
-    title: "Risk command",
-    subtitle: "Portfolio impairment, macro regimes and decision reports in one committee-ready surface."
+    title: "Overview",
+    subtitle: "Portfolio impairment, macro regime and open decisions at a glance."
   },
   impairment: {
     title: "Impairment",
