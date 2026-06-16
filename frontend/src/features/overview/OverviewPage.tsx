@@ -81,12 +81,16 @@ export function OverviewPage({
         {loading ? (
           <div className="skeleton-chart" />
         ) : chartData.length ? (
-          <ResponsiveContainer width="100%" height={260}>
+          <ResponsiveContainer width="100%" height={230}>
             <LineChart data={chartData} margin={{ left: 6, right: 14, top: 12, bottom: 8 }}>
-              <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 10 }} />
-              <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 10 }} width={36} />
-              <Tooltip contentStyle={{ borderRadius: 8, border: "1px solid #d4d7db", fontSize: 12 }} />
-              <Line type="monotone" dataKey="risk" stroke="#2f6f4f" strokeWidth={2} dot={{ r: 2.5 }} />
+              <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "#9aa1aa" }} />
+              <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "#9aa1aa" }} width={36} />
+              <Tooltip
+                contentStyle={{ background: "#23272e", borderRadius: 6, border: "1px solid #3a414b", fontSize: 12 }}
+                labelStyle={{ color: "#d8dde3" }}
+                itemStyle={{ color: "#e8833a" }}
+              />
+              <Line type="monotone" dataKey="risk" stroke="#e8833a" strokeWidth={2} dot={{ r: 2 }} />
             </LineChart>
           </ResponsiveContainer>
         ) : (
