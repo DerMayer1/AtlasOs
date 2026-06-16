@@ -242,7 +242,7 @@ def test_failed_analysis_persists_error(client_and_keys):
 
 
 def test_agent_ask_refuses_out_of_scope(client_and_keys):
-    # No ANTHROPIC key in tests -> deterministic planner; FX is out of scope.
+    # No OpenAI key in tests -> deterministic planner; FX is out of scope.
     client, run_token, _, _ = client_and_keys
     resp = client.post(
         "/agent/ask",

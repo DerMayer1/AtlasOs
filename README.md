@@ -219,7 +219,7 @@ Invoke-RestMethod -Method Post http://127.0.0.1:8000/agent/ask -Headers $h `
   -Body '{"question":"What is the impairment risk in a 2022-style scenario?","portfolio_id":"<pf_id>"}'
 ```
 
-The LLM is optional: with no `ATLAS_ANTHROPIC_API_KEY` the orchestrator uses a
+The LLM is optional: with no `ATLAS_OPENAI_API_KEY` the orchestrator uses a
 deterministic planner and the narrator a fully-cited template (the PRD's
 graceful-degradation path). The LLM never sees raw data — only the capability
 catalog and a list of citable values. The eval suite

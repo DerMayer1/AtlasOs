@@ -7,7 +7,7 @@ never on exact prose. A regression in the orchestrator, narrator, citation
 validator, or prompts flips one of these assertions and fails CI.
 
 The scripted responder simulates a competent model. The same code path runs
-against the real Anthropic model when ATLAS_ANTHROPIC_API_KEY is set (see
+against the real OpenAI model when ATLAS_OPENAI_API_KEY is set (see
 runner.run_evals(live=True))."""
 
 from __future__ import annotations

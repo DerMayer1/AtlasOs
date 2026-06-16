@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from atlas.agent.llm import AnthropicLLMClient, LLMClient, NullLLMClient
+from atlas.agent.llm import LLMClient, NullLLMClient, OpenAILLMClient
 from atlas.agent.service import AgentService
 from atlas.agent.trace_store import TraceStore
 from atlas.domain.engines import build_registry
@@ -55,8 +55,8 @@ def build_container(settings: Settings) -> Container:
         )
 
     llm: LLMClient = (
-        AnthropicLLMClient(settings.anthropic_api_key, settings.llm_model)
-        if settings.anthropic_api_key
+        OpenAILLMClient(settings.openai_api_key, settings.llm_model)
+        if settings.openai_api_key
         else NullLLMClient()
     )
     agent = AgentService(

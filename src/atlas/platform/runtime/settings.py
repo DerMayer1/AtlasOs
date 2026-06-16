@@ -28,9 +28,9 @@ class Settings(BaseSettings):
     rate_limit_burst: int = 30
     max_request_body_bytes: int = 1_000_000
     # Agent LLM. Empty key -> NullLLMClient -> graceful degradation (deterministic
-    # planning + numbers-only narration). Set ATLAS_ANTHROPIC_API_KEY for full mode.
-    anthropic_api_key: str = ""
-    llm_model: str = "claude-haiku-4-5-20251001"
+    # planning + numbers-only narration). Set ATLAS_OPENAI_API_KEY for full mode.
+    openai_api_key: str = ""
+    llm_model: str = "gpt-4.1-mini"
 
 
 def get_settings() -> Settings:

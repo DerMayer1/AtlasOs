@@ -102,12 +102,12 @@ hereby closed: cell/key locators, not whole lines.
 ## ADR-011 — LLM behind an interface; graceful degradation is the default path
 
 The agent talks to an ``LLMClient`` protocol with three implementations:
-``AnthropicLLMClient`` (production), ``ScriptedLLMClient`` (deterministic,
+``OpenAILLMClient`` (production), ``ScriptedLLMClient`` (deterministic,
 drives tests + evals with zero cost), and ``NullLLMClient`` (no key). With no
 key the orchestrator falls back to a deterministic keyword planner and the
 narrator to a fully-cited template — so the system is completely functional and
 honest offline, and this *is* the PRD's graceful-degradation requirement (LLM
-down → numbers-only, pipeline never blocks). Set ``ATLAS_ANTHROPIC_API_KEY``
+down → numbers-only, pipeline never blocks). Set ``ATLAS_OPENAI_API_KEY``
 for LLM planning + prose. The LLM only ever sees the capability catalog and a
 CITABLE VALUES list — never raw snapshot data (PRD §7.1 principle 2).
 
