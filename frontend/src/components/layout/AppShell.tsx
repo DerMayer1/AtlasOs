@@ -67,29 +67,28 @@ export function AppShell({
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      <header className="topnav">
         <a className="brand" href="#overview" onClick={() => onNavigate("overview")}>
           <span className="brand-mark">A</span>
           <span>ATLAS</span>
         </a>
-        <nav className="nav" aria-label="Primary">
+        <nav className="topnav-tabs" aria-label="Primary">
           {routes.map((item) => (
             <button
-              className={clsx("nav-item", route === item.id && "is-active")}
+              className={clsx("topnav-tab", route === item.id && "is-active")}
               key={item.id}
               type="button"
               onClick={() => onNavigate(item.id)}
             >
-              <span className="nav-rule" />
               {item.label}
             </button>
           ))}
         </nav>
-        <div className="sidebar-footer">
-          <span>AtlasOS v0.5</span>
-          <strong>{configured ? "Connected" : "Offline"}</strong>
-        </div>
-      </aside>
+        <span className="topnav-status">
+          <span className="status-dot" data-state={configured ? "ready" : "blocked"} />
+          {configured ? "Connected" : "Offline"}
+        </span>
+      </header>
       <main className="main">
         <header className="topbar">
           <div>

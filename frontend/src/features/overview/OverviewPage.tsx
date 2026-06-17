@@ -8,6 +8,20 @@ import { StateBlock } from "../../components/ui/StateBlock";
 import { fetchAnalyses, fetchPortfolios, fetchReports } from "../../lib/api";
 import { latestImpairment, latestMacro, riskSeries, totalActions, worstReport } from "../../lib/analytics";
 import { compactDate, number, percent, relativeTime, titleCase } from "../../lib/format";
+import type { Analysis } from "../../lib/schemas";
+
+function outcomeTone(analysis: Analysis): string {
+  if (analysis.engine === "macro_monitor") {
+    const stress = analysis.stress_index ?? 0;
+    if (stress >= 0.66) return "is-neg";
+    if (stress >= 0.5) return "is-warn";
+    return "is-pos";
+  }
+  const risk = analysis.portfolio_mean_p_impairment ?? 0;
+  if (risk >= 0.25) return "is-neg";
+  if (risk >= 0.15) return "is-warn";
+  return "is-pos";
+}
 
 export function OverviewPage({
   onNavigate,
@@ -150,11 +164,17 @@ export function OverviewPage({
                 <tr key={analysis.job_id}>
                   <td className="mono">{analysis.job_id}</td>
                   <td>{titleCase(analysis.engine)}</td>
-                  <td>{titleCase(analysis.status)}</td>
                   <td>
-                    {analysis.engine === "macro_monitor"
-                      ? `Stress ${number(analysis.stress_index)}`
-                      : percent(analysis.portfolio_mean_p_impairment)}
+                    <span className={`val-status is-${analysis.status}`}>
+                      {titleCase(analysis.status)}
+                    </span>
+                  </td>
+                  <td>
+                    <span className={`val ${outcomeTone(analysis)}`}>
+                      {analysis.engine === "macro_monitor"
+                        ? `Stress ${number(analysis.stress_index)}`
+                        : percent(analysis.portfolio_mean_p_impairment)}
+                    </span>
                   </td>
                   <td>{compactDate(analysis.created_at)}</td>
                 </tr>
