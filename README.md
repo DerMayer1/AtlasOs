@@ -1,238 +1,220 @@
-# Atlas — Macro-Financial Monitoring Platform
+# AtlasOS
 
-> Every number is reproducible; every claim cites its number; every decision
-> leaves a trace.
+> Macro-financial monitoring for reproducible portfolio risk, audited decisions, and cited institutional reports.
 
-Pluggable quantitative engines produce numbers; a governed orchestrating agent
-produces theses citing those numbers; every decision is traceable to the datum
-that originated it. Full product spec: see the PRD (v1.0, June 2026).
+![Python](https://img.shields.io/badge/Python-3.12-1f2937)
+![FastAPI](https://img.shields.io/badge/API-FastAPI-0f766e)
+![React](https://img.shields.io/badge/UI-React%20%2B%20Vite-2563eb)
+![Validation](https://img.shields.io/badge/Validation-Walk--forward-7c2d12)
+![License](https://img.shields.io/badge/License-Pending-lightgrey)
 
-## Architecture at a glance
+AtlasOS is an institutional macro-financial monitoring platform. It turns
+frozen macro snapshots and portfolio inputs into deterministic risk analyses,
+decision reports, and traceable narratives. The system is designed around one
+operating rule: every number must be reproducible, every claim must cite its
+source, and every decision must leave an audit trail.
 
+## Product Screenshots
+
+### Executive Overview
+
+![AtlasOS overview](docs/screenshots/overview.png)
+
+### Decision Reports
+
+![AtlasOS reports](docs/screenshots/reports.png)
+
+### Macro Monitor
+
+![AtlasOS macro monitor](docs/screenshots/macro-monitor.png)
+
+## What AtlasOS Does
+
+AtlasOS combines deterministic quantitative engines with a governed reporting
+layer. The LLM, when enabled, does not calculate figures. It can plan and
+narrate, but every numeric output comes from the engine artifacts and every
+numeric claim is citation-checked before it reaches the user.
+
+| Capability | Description |
+| --- | --- |
+| Portfolio impairment analysis | Joint portfolio impairment simulation with macro, sector, company, and valuation multiple factors. |
+| Macro monitor | Current regime, stress index, indicator trends, alerts, and state-conditioned reference scenarios. |
+| Decision reports | Persisted institutional memos with severities, actions, drivers, figures, and citations. |
+| Cited narratives | Optional LLM-generated explanations constrained to citable engine values. |
+| Audit trail | Snapshot hashes, artifacts, API runs, reports, and agent traces are persisted. |
+| Graceful degradation | With no LLM key, AtlasOS still runs deterministic engines and cited template narratives. |
+
+## Operating Principles
+
+1. Deterministic engines produce all figures.
+2. The LLM never performs calculations.
+3. Analyses run on identified, hash-verified snapshots.
+4. Reports cite exact artifact values, not vague sources.
+5. Narration failure never blocks the underlying numbers.
+6. Published validation results are shown as measured, including limitations.
+
+## System Architecture
+
+```mermaid
+flowchart LR
+    A["Macro data and portfolio inputs"] --> B["Snapshot store"]
+    B --> C["Engine registry"]
+    C --> D["Impairment engine"]
+    C --> E["Macro monitor engine"]
+    D --> F["Artifact store"]
+    E --> F
+    F --> G["Report builder"]
+    G --> H["Decision memo"]
+    F --> I["Agent service"]
+    I --> J["Cited narrative"]
+    H --> K["React interface"]
+    J --> K
 ```
+
+AtlasOS separates platform infrastructure, domain engines, agent orchestration,
+and user interfaces:
+
+| Layer | Responsibility |
+| --- | --- |
+| `atlas.platform` | Contracts, snapshots, artifacts, database models, settings, queue, and execution runtime. |
+| `atlas.domain` | Macro ingestion, impairment engine, macro monitor, validation, and report models. |
+| `atlas.agent` | Planning, narration, citation validation, LLM abstraction, and trace storage. |
+| `atlas.interfaces` | FastAPI application, API-key auth, CLI operations, worker process, and static UI hosting. |
+| `frontend` | React/Vite institutional interface and server-side deployment proxy. |
+
+## Analysis Lifecycle
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant API
+    participant Snapshot as Snapshot Store
+    participant Engine
+    participant Artifacts
+    participant Report
+    participant UI
+
+    User->>API: Submit analysis request
+    API->>Snapshot: Resolve frozen snapshot
+    API->>Engine: Execute deterministic model
+    Engine->>Artifacts: Publish CSV and JSON outputs
+    API->>Report: Build cited decision memo
+    Report->>Artifacts: Resolve exact values
+    UI->>API: Display run, report, citations
+```
+
+## Validation and Evidence
+
+AtlasOS includes a reproducible validation workflow for the macro crisis
+classifier and model benchmarks. The current validation report covers
+walk-forward testing, target sensitivity, probability calibration, false-alert
+burden, and feature influence.
+
+| Artifact | Location |
+| --- | --- |
+| Validation report | [`docs/validation_report.md`](docs/validation_report.md) |
+| Agent eval record | [`docs/agent_evals.md`](docs/agent_evals.md) |
+| Architecture decisions | [`docs/DECISIONS.md`](docs/DECISIONS.md) |
+| Known limitations | [`docs/limitations.md`](docs/limitations.md) |
+
+### Model Evidence
+
+![Walk-forward crisis probabilities](docs/figures/walk_forward_crisis_probabilities.png)
+
+![Crisis calibration](docs/figures/crisis_calibration.png)
+
+## Security and Governance
+
+AtlasOS is built for a controlled institutional environment:
+
+| Control | Implementation |
+| --- | --- |
+| API authentication | API keys with read and run scopes. Plaintext tokens are shown once and stored as hashes. |
+| Server-side secrets | Browser clients do not store Atlas API keys. Vercel deployments use a server-side proxy. |
+| Request hardening | Security headers, maximum body size, and dependency-free rate limiting are included. |
+| Data integrity | Snapshots use content identity and parquet-byte integrity checks. |
+| Traceability | Runs, reports, artifacts, and agent traces are persisted for later review. |
+| LLM containment | LLM clients receive capability catalogs and citable values, not raw snapshot tables. |
+
+## Deployment Model
+
+AtlasOS can run as a local evaluation instance, a containerized backend with
+Postgres and Redis, or a split deployment where the frontend is served separately
+and calls the Atlas API through a server-side proxy.
+
+```mermaid
+flowchart TB
+    U["User browser"] --> V["React frontend"]
+    V --> P["Server-side proxy"]
+    P --> A["Atlas FastAPI"]
+    A --> Q["Queue"]
+    Q --> W["Worker"]
+    A --> DB["Postgres or SQLite"]
+    W --> DB
+    A --> S["Snapshot and artifact storage"]
+    W --> S
+```
+
+For operators, the repository includes Docker, Alembic migrations, API-key
+management, a Redis worker mode, and a local SQLite mode for lightweight
+evaluation. Detailed operational commands live in the source tree and project
+documentation instead of this public overview.
+
+## API Surface
+
+| Area | Endpoints |
+| --- | --- |
+| Portfolios | `POST /portfolios`, `GET /portfolios`, `GET /portfolios/{id}`, `PUT /portfolios/{id}` |
+| Analyses | `POST /analyses`, `GET /analyses`, `GET /analyses/{id}` |
+| Reports | `POST /analyses/{id}/report`, `GET /analyses/{id}/report`, `GET /reports` |
+| Agent | `POST /agent/ask`, `GET /agent/traces/{id}` |
+| Artifacts | `GET /artifacts/{run_id}/{name}` |
+| System | `GET /health` |
+
+## Repository Guide
+
+```text
 src/atlas/
-├── platform/            # domain-agnostic: never imports domain (CI-enforced)
-│   ├── contracts/       # AnalysisWorker + pydantic schemas (the central contract)
-│   ├── audit/           # immutable snapshots (parquet + sha256 manifest), artifacts
-│   ├── db/              # SQLAlchemy models (Postgres = source of truth)
-│   └── runtime/         # registry, queue (ARQ/in-process), runner, settings
-├── domain/
-│   ├── data/            # FRED ingestion (cached, incremental) + synthetic demo
-│   ├── engines/
-│   │   ├── impairment/  # Engine 1: joint portfolio impairment model
-│   │   └── macro_monitor/ # Engine 2: regimes, trends, alerts and scenarios
-│   └── validation/      # reference labels + metrics for the validation report
-├── agent/               # orchestrator (question→plan), narrator (results→thesis),
-│   │                    # citation validator, trace store, evals/
-│   └── evals/           # ≥15 scripted-LLM cases; CI gate
-└── interfaces/
-    ├── api/             # FastAPI app, API-key auth (read/run scopes)
-    ├── worker.py        # ARQ worker (3 retries, exponential backoff)
-    └── cli.py           # init-db, seed, ingest
-scripts/                 # validation_report.py (make validation-report)
-docs/                    # DECISIONS.md (ADRs), limitations.md, validation_report.md, agent_evals.md
-migrations/              # Alembic
-tests/                   # unit, property-based, API e2e, agent, citations, evals
+  platform/      Contracts, snapshots, database, queue, runtime
+  domain/        Data ingestion, engines, validation, reports
+  agent/         Planning, narration, citations, evals, traces
+  interfaces/    FastAPI app, worker, CLI, static UI hosting
+frontend/        React/Vite interface and deployment proxy
+migrations/      Alembic database migrations
+docs/            Decisions, validation, limitations, figures
+tests/           Contracts, API, engines, reports, agent, citations
 ```
 
-Non-negotiable principles (PRD §7.1):
+## Roadmap
 
-1. Dependency direction: `domain → platform`, never the reverse.
-2. The LLM never calculates — all math lives in deterministic engines.
-3. Nothing runs on live data — only on identified, hash-verified snapshots.
-4. Every decision leaves a trace.
-5. Graceful degradation — narration failure never blocks numbers.
+| Track | Status |
+| --- | --- |
+| Deterministic engine foundation | Complete |
+| FastAPI, persistence, auth, queue | Complete |
+| FRED ingestion and model validation | Complete |
+| Governed agent with cited narratives | Complete |
+| Macro monitor | Complete |
+| Public proof and hosted user experience | In progress |
 
-## Quickstart (local, no Docker)
+## Limitations
 
-```powershell
-py -3.12 -m venv .venv
-.venv\Scripts\pip install -e .[dev]
-.venv\Scripts\pytest                            # full suite
-.venv\Scripts\python -m atlas.interfaces.cli demo
-```
+AtlasOS is intentionally transparent about what it does not yet claim. Current
+limitations include revised FRED history rather than vintage ALFRED data,
+monthly crisis-detection granularity, on-demand alerts rather than automatic
+delivery, market-multiple valuation rather than a full DCF stack, and single
+tenant operation. See [`docs/limitations.md`](docs/limitations.md) for the full
+record.
 
-Open http://127.0.0.1:8000. The app opens on the **Overview** page (macro state,
-portfolio risk and decisions needing attention). The explicit local demo command
-creates the synthetic snapshot for local use. Runs are stored and can be
-reopened from **Recent analyses** without executing the engine again.
+## License
 
-## React frontend prototype
+No open-source license has been published for this repository yet. Until a
+`LICENSE` file is added, all rights are reserved by the repository owner. Before
+using AtlasOS outside evaluation or review, confirm the intended commercial or
+open-source license.
 
-The institutional React/Vite frontend lives in `frontend/` and runs alongside
-the FastAPI server during development:
+## Disclaimer
 
-```powershell
-cd frontend
-pnpm install
-pnpm dev
-```
-
-Open http://127.0.0.1:5173. Vite proxies API calls to
-http://127.0.0.1:8000, so keep the FastAPI app running in another terminal.
-The React app never stores Atlas API keys in browser storage or bundled
-JavaScript.
-
-For Vercel frontend-only deploys, set the project root to `frontend/` and use:
-
-```text
-Install Command: pnpm install --frozen-lockfile
-Build Command: pnpm build
-Output Directory: dist
-```
-
-For Vercel frontend deploys, keep secrets in server-side environment variables.
-The browser calls the included `/api/atlas/*` Vercel Function, which injects the
-Atlas API key from the deployment environment:
-
-```text
-ATLAS_API_URL=https://your-atlas-api.example.com
-ATLAS_API_KEY=atlas_...
-ATLAS_PROXY_RATE_LIMIT_REQUESTS=120
-ATLAS_PROXY_RATE_LIMIT_WINDOW_MS=60000
-ATLAS_PROXY_MAX_BODY_BYTES=1000000
-```
-
-`VITE_ATLAS_API_URL` is optional and must only contain a public URL/path. It is
-safe to leave unset on Vercel; the frontend defaults to `/api/atlas`.
-
-If the frontend calls the Atlas API directly instead of using the proxy, the API
-deployment must allow the Vercel origin:
-
-```text
-ATLAS_CORS_ALLOWED_ORIGINS=https://your-frontend.vercel.app
-```
-
-The FastAPI backend also ships with a dependency-free defensive baseline:
-
-```text
-ATLAS_RATE_LIMIT_ENABLED=true
-ATLAS_RATE_LIMIT_REQUESTS_PER_MINUTE=120
-ATLAS_RATE_LIMIT_BURST=30
-ATLAS_MAX_REQUEST_BODY_BYTES=1000000
-```
-
-This protects single-instance deployments and local demos. For multi-instance
-production, put a managed edge/WAF or Redis-backed limiter in front of the API so
-limits are shared across workers and regions.
-
-> Upgrading an existing dev DB: `auto_create_schema` only creates missing
-> tables, it never alters existing ones. After a schema change, recreate the
-> local SQLite file (`del var\atlas.db`) or run `alembic upgrade head` — otherwise
-> calls hit `no such column`. Production (Postgres) is migrated by Alembic.
-
-For direct API usage, seed credentials manually and start the regular server:
-
-```powershell
-.venv\Scripts\python -m atlas.interfaces.cli seed
-.venv\Scripts\uvicorn atlas.interfaces.api.app:create_app --factory
-$h = @{ "X-API-Key" = "<api_key>" }
-Invoke-RestMethod -Method Post http://127.0.0.1:8000/analyses -Headers $h `
-  -ContentType application/json -Body '{"engine":"impairment","portfolio_id":"<pf_id>"}'
-Invoke-RestMethod http://127.0.0.1:8000/analyses/<job_id> -Headers $h
-
-# Macro Monitor does not require a portfolio.
-Invoke-RestMethod -Method Post http://127.0.0.1:8000/analyses -Headers $h `
-  -ContentType application/json -Body '{"engine":"macro_monitor"}'
-```
-
-The regular server never exposes bootstrap credentials. The UI does not poll or
-rerun automatically: queued production jobs expose an explicit **Refresh
-status** action.
-
-## Full system (Postgres + Redis + worker)
-
-```bash
-docker compose up --build
-docker compose run --rm api python -m atlas.interfaces.cli seed
-```
-
-API at http://localhost:8000 (OpenAPI docs at `/docs`). Endpoints: `POST /portfolios`,
-`POST /analyses` (returns `job_id`), `GET /analyses/{id}`,
-`POST /analyses/{id}/report`, `GET /analyses/{id}/report`, `POST /agent/ask`,
-`GET /agent/traces/{id}`, `GET /artifacts/{run_id}/{name}`, `GET /health`. Auth
-via `X-API-Key` with `read`/`run` scopes.
-
-`POST /analyses` is idempotent: an identical request (same engine, engine/model
-version, snapshot and params) returns the existing run with `"deduplicated": true`
-instead of re-executing the engine; pass `"force": true` to run anyway. The
-report endpoint builds a **deterministic** decision report from a succeeded
-analysis — key figures, risk drivers and recommended actions, each citing the
-artifact value that triggered it (`artifact:locator`). No LLM produces or
-chooses any number; the report is persisted and queryable. Actions follow fixed
-policy rules (e.g. high stress + low liquidity → review refinancing; material
-increase vs the previous run → escalate).
-
-## Real macro data + validation (Phase 2)
-
-```powershell
-.venv\Scripts\python -m atlas.interfaces.cli ingest   # FRED → frozen snapshot
-make calibrate-shocks                                 # fit per-regime EBITDA shocks from corporate profits
-make validation-report                                # regenerate docs/validation_report.md + figures
-```
-
-When network access is unavailable and the FRED cache is already populated:
-
-```powershell
-$env:ATLAS_VALIDATION_OFFLINE = "1"
-make validation-report
-```
-
-Ingestion pulls the core macro series plus VIX from FRED's keyless `fredgraph` endpoint
-(cached, incremental), freezes them as a hash-verified snapshot, and indexes it
-in Postgres. The impairment engine uses a 3-state Gaussian HMM
-(`regime_model="hmm"`, with a credit-spread *change* feature); the Phase 0
-z-score classifier remains available as `regime_model="zscore"`. Model
-validation uses a separate supervised crisis classifier with expanding
-walk-forward tests, publication lags and comparisons against HMM, VIX and
-spread rules. The per-regime stress shocks are calibrated from
-corporate-profit history (`make calibrate-shocks` → `shock_calibration.json`).
-Company valuation uses positive EBITDA paths with shared macro/sector factors,
-company-specific residuals and stochastic bounded multiples. Every run
-publishes base/tightening/crisis distributions over one and three years,
-expected and tail impairment losses, cross-company value correlation,
-sensitivities, break-even points and separate debt/liquidity diagnostics.
-The Macro Monitor independently publishes the current filtered regime,
-one-month transition probabilities, indicator trends, stress percentiles,
-alert drivers, snapshot comparisons and state-conditioned reference scenarios
-in a versioned `macro_state.json`.
-The report itself ([docs/validation_report.md](docs/validation_report.md)) is
-regenerated from a frozen snapshot and publishes the out-of-sample results,
-including target sensitivity, calibration and false-alert burden.
-
-## The agent: every claim cites its number (Phase 3)
-
-`POST /agent/ask` turns an institutional question into a typed plan of engine
-calls (orchestrator), runs the real deterministic engines, and narrates the
-structured results into a thesis where **every figure is followed by a
-`[artifact_id:locator]` citation** — validated against the artifacts before the
-answer is returned. An uncited or wrong number gets the narrative regenerated
-once, then degraded to a numbers-only summary. Out-of-scope questions are
-refused honestly with the real capability list. The whole decision (plan, tool
-calls, tokens, cost, latency, prompt version) is persisted as a queryable trace
-(`GET /agent/traces/{id}`).
-
-```powershell
-$h = @{ "X-API-Key" = "<api_key>" }
-Invoke-RestMethod -Method Post http://127.0.0.1:8000/agent/ask -Headers $h `
-  -ContentType application/json `
-  -Body '{"question":"What is the impairment risk in a 2022-style scenario?","portfolio_id":"<pf_id>"}'
-```
-
-The LLM is optional: with no `ATLAS_OPENAI_API_KEY` the orchestrator uses a
-deterministic planner and the narrator a fully-cited template (the PRD's
-graceful-degradation path). The LLM never sees raw data — only the capability
-catalog and a list of citable values. The eval suite
-([docs/agent_evals.md](docs/agent_evals.md)) gates CI: 16 scripted-LLM cases,
-regression fails the build.
-
-## Roadmap (PRD §9)
-
-| Phase | Content | Done when |
-|---|---|---|
-| **0 — Foundation** ✅ | Contracts, schemas, snapshot/artifact stores, registry, Engine 1 behind `AnalysisWorker`, tests, CI | Tests green; import-direction enforced |
-| **1 — Living system** ✅ | FastAPI, Postgres + Alembic, ARQ/Redis queue, docker compose, API keys | `POST /analyses` → result via `GET` |
-| **2 — Credibility** ✅ | FRED ingestion, real snapshots, HMM, validation report (2008/2020/2022) | "Detection lag in 2020?" answerable with a number |
-| **3 — Differentiator** ✅ | Orchestrator, narrator with mandatory citations, trace store, eval suite in CI | Prompt change → CI catches regression |
-| **4a — Macro monitor** ✅ | Engine 2: regime, trends, reference scenarios and on-demand alerts | Macro state is reproducible and independently callable |
-| 4b — Public proof | React frontend (clickable citations), scheduler, alert delivery, deploy | A stranger uses it unaided via the link |
+AtlasOS is analytical software. It does not provide investment, accounting,
+legal, tax, or risk-management advice. Outputs should be reviewed by qualified
+professionals before they are used in investment, valuation, reporting, or
+committee decisions.
