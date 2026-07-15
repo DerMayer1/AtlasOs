@@ -12,7 +12,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -22,7 +22,13 @@ from sqlalchemy.orm import Session
 
 from atlas.domain.engines.impairment.models import CompanyFinancialProfile
 from atlas.domain.reports.builder import build_report
-from atlas.interfaces.api.auth import SCOPE_READ, SCOPE_RUN, create_api_key, require_scope
+from atlas.interfaces.api.auth import (
+    API_KEY_COOKIE,
+    SCOPE_READ,
+    SCOPE_RUN,
+    create_api_key,
+    require_scope,
+)
 from atlas.interfaces.api.container import Container, build_container
 from atlas.interfaces.api.security import (
     MaxBodySizeMiddleware,
@@ -309,7 +315,7 @@ def _router():
         return FileResponse(STATIC_DIR / "index.html")
 
     @router.post("/demo/bootstrap", include_in_schema=False)
-    def demo_bootstrap(request: Request):
+    def demo_bootstrap(request: Request, response: Response):
         c = _container(request)
         if not c.settings.demo_mode:
             raise HTTPException(404, "local demo mode is not enabled")
@@ -340,9 +346,18 @@ def _router():
                 scopes=[SCOPE_READ, SCOPE_RUN],
             )
 
+        response.set_cookie(
+            key=API_KEY_COOKIE,
+            value=token,
+            httponly=True,
+            secure=False,
+            samesite="strict",
+            path="/",
+        )
+
         return {
             "mode": "local-demo",
-            "api_key": token,
+            "authentication": "http-only-cookie",
             "snapshot_id": latest.snapshot_id,
             "capabilities": sorted(c.registry.capabilities()),
         }

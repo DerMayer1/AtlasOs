@@ -6,7 +6,14 @@ import { Panel } from "../../components/ui/Panel";
 import { bootstrapLocalDemo, fetchHealth, getApiBaseUrl } from "../../lib/api";
 
 export function SystemPage() {
-  const { configured, demoMode, enableDemoMode, useBackendMode, connectionMode } = useApiKey();
+  const {
+    configured,
+    demoMode,
+    enableDemoMode,
+    useBackendMode,
+    connectionMode,
+    connectionState
+  } = useApiKey();
   const [message, setMessage] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const health = useQuery({
@@ -36,7 +43,15 @@ export function SystemPage() {
       <section className="executive-strip">
         <Metric
           label="Connection"
-          value={demoMode ? "Demo" : configured ? "Configured" : "Missing"}
+          value={
+            demoMode
+              ? "Demo"
+              : connectionState === "checking"
+                ? "Checking"
+                : configured
+                  ? "Configured"
+                  : "Missing"
+          }
           detail={demoMode ? "Static demo mode" : getApiBaseUrl()}
           tone={configured ? "good" : "watch"}
         />

@@ -175,9 +175,9 @@ export const demoPortfolios: Portfolio[] = [
     portfolio_id: "pf_centurion_credit",
     name: "Atlas Strategic Credit",
     companies: [
-      { company: "Northbridge Infrastructure", ebitda: 180, multiple: 8.4, carrying_value: 1380 },
-      { company: "Helios Data Services", ebitda: 96, multiple: 11.2, carrying_value: 1040 },
-      { company: "Meridian Logistics", ebitda: 72, multiple: 7.1, carrying_value: 520 }
+      { name: "Northbridge Infrastructure", ebitda: 180, multiple: 8.4, carrying_value: 1380 },
+      { name: "Helios Data Services", ebitda: 96, multiple: 11.2, carrying_value: 1040 },
+      { name: "Meridian Logistics", ebitda: 72, multiple: 7.1, carrying_value: 520 }
     ],
     created_at: now,
     updated_at: now
@@ -186,8 +186,8 @@ export const demoPortfolios: Portfolio[] = [
     portfolio_id: "pf_global_special",
     name: "Global Special Situations",
     companies: [
-      { company: "Aurelian Health", ebitda: 210, multiple: 10.8, carrying_value: 2160 },
-      { company: "Crownwell Materials", ebitda: 130, multiple: 6.9, carrying_value: 830 }
+      { name: "Aurelian Health", ebitda: 210, multiple: 10.8, carrying_value: 2160 },
+      { name: "Crownwell Materials", ebitda: 130, multiple: 6.9, carrying_value: 830 }
     ],
     created_at: "2026-06-15T20:00:00.000Z",
     updated_at: "2026-06-15T20:00:00.000Z"

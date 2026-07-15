@@ -22,6 +22,7 @@ api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 SCOPE_READ = "read"
 SCOPE_RUN = "run"
+API_KEY_COOKIE = "atlas_api_key"
 
 
 def hash_token(token: str) -> str:
@@ -47,6 +48,10 @@ def require_scope(scope: str):
         request: Request,
         token: str | None = Security(api_key_header),
     ) -> ApiKeyRow:
+        # Browser clients authenticate through an HttpOnly, SameSite cookie
+        # issued only by the explicit local-demo bootstrap. API clients and the
+        # deployment proxy continue to use X-API-Key.
+        token = token or request.cookies.get(API_KEY_COOKIE)
         if not token:
             raise HTTPException(status_code=401, detail="missing X-API-Key header")
         session_factory = request.app.state.container.session_factory

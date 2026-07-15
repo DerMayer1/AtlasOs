@@ -136,6 +136,12 @@ AtlasOS is built for a controlled institutional environment:
 | Traceability | Runs, reports, artifacts, and agent traces are persisted for later review. |
 | LLM containment | LLM clients receive capability catalogs and citable values, not raw snapshot tables. |
 
+Browser authentication has two supported paths. A Vercel deployment calls the
+same-origin `/api/atlas/*` proxy, which injects its server-side API key. An
+explicit local demo bootstrap issues an `HttpOnly`, `SameSite=Strict` cookie;
+the plaintext key is never returned to JavaScript. Direct API clients continue
+to authenticate with `X-API-Key`.
+
 ## Deployment Model
 
 AtlasOS can run as a local evaluation instance, a containerized backend with

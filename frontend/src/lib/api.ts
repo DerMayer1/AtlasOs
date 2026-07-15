@@ -64,7 +64,11 @@ async function atlasFetch(path: string, init: RequestInit = {}) {
     headers.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(apiUrl(path), { ...init, headers });
+  const response = await fetch(apiUrl(path), {
+    ...init,
+    headers,
+    credentials: "same-origin"
+  });
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
     try {
@@ -86,12 +90,23 @@ export async function bootstrapLocalDemo() {
   } catch (error) {
     setDemoMode(true);
     return {
-      api_key: "",
       mode: "static-demo",
       snapshot_id: "snap_static_demo",
       degraded: true,
       reason: error instanceof Error ? error.message : "Backend unavailable"
     };
+  }
+}
+
+export async function probeAuthenticatedConnection() {
+  if (isDemoMode()) {
+    return true;
+  }
+  try {
+    await atlasFetch("/portfolios?limit=1");
+    return true;
+  } catch {
+    return false;
   }
 }
 

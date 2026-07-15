@@ -1,6 +1,6 @@
 const state = {
-  apiKey: sessionStorage.getItem("atlas_api_key") || "",
-  connectionMode: sessionStorage.getItem("atlas_connection_mode") || "api-key",
+  apiKey: "",
+  connectionMode: sessionStorage.getItem("atlas_connection_mode") || "backend-session",
   currentJobId: sessionStorage.getItem("atlas_current_job") || null,
   currentResult: null,
   macroJobId: sessionStorage.getItem("atlas_macro_job") || null,
@@ -65,6 +65,10 @@ const state = {
     },
   ],
 };
+
+// Remove credentials persisted by versions prior to the server-managed
+// browser-session model. Manually entered keys now live in memory only.
+sessionStorage.removeItem("atlas_api_key");
 
 const elements = {
   body: document.body,
@@ -315,7 +319,7 @@ function renderCompanies() {
 }
 
 function setConnectionState() {
-  const connected = Boolean(state.apiKey);
+  const connected = Boolean(state.apiKey) || state.connectionMode === "local-demo";
   elements.connectionDot.classList.toggle("is-connected", connected);
   elements.connectionLabel.textContent = connected
     ? state.connectionMode === "local-demo"
@@ -386,17 +390,24 @@ function setMacroLoading(loading) {
 }
 
 async function api(path, options = {}) {
-  if (!state.apiKey) {
+  const usesBackendSession = ["backend-session", "local-demo"].includes(
+    state.connectionMode,
+  );
+  if (!state.apiKey && !usesBackendSession) {
     openKeyDialog();
     throw new Error("Configure an API key before running an analysis.");
   }
+  const headers = {
+    "Content-Type": "application/json",
+    ...(options.headers || {}),
+  };
+  if (state.apiKey) {
+    headers["X-API-Key"] = state.apiKey;
+  }
   const response = await fetch(path, {
     ...options,
-    headers: {
-      "Content-Type": "application/json",
-      "X-API-Key": state.apiKey,
-      ...(options.headers || {}),
-    },
+    credentials: "same-origin",
+    headers,
   });
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
@@ -2287,11 +2298,9 @@ elements.keyForm.addEventListener("submit", (event) => {
   event.preventDefault();
   state.apiKey = elements.apiKeyInput.value.trim();
   if (state.apiKey) {
-    sessionStorage.setItem("atlas_api_key", state.apiKey);
     state.connectionMode = "api-key";
     sessionStorage.setItem("atlas_connection_mode", state.connectionMode);
   } else {
-    sessionStorage.removeItem("atlas_api_key");
     sessionStorage.removeItem("atlas_connection_mode");
   }
   setConnectionState();
@@ -2477,9 +2486,8 @@ async function initialize() {
   if (!historyLoaded) {
     if (state.apiKey) {
       state.apiKey = "";
-      state.connectionMode = "api-key";
+      state.connectionMode = "backend-session";
       state.currentJobId = null;
-      sessionStorage.removeItem("atlas_api_key");
       sessionStorage.removeItem("atlas_connection_mode");
       sessionStorage.removeItem("atlas_current_job");
       setConnectionState();
@@ -2490,9 +2498,7 @@ async function initialize() {
       const response = await fetch("/demo/bootstrap", { method: "POST" });
       if (response.ok) {
         const bootstrap = await response.json();
-        state.apiKey = bootstrap.api_key;
         state.connectionMode = bootstrap.mode;
-        sessionStorage.setItem("atlas_api_key", state.apiKey);
         sessionStorage.setItem("atlas_connection_mode", state.connectionMode);
         setConnectionState();
         showNotice(

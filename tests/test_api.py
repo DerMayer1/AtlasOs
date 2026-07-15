@@ -293,7 +293,9 @@ def test_rate_limit_returns_429(tmp_path):
         redis_url="",
         data_dir=tmp_path / "data",
         auto_create_schema=True,
-        rate_limit_requests_per_minute=60,
+        # Keep refill negligible during the test so slow Windows CI hosts do
+        # not replenish a token between the second and third request.
+        rate_limit_requests_per_minute=1,
         rate_limit_burst=2,
     )
     client = TestClient(create_app(settings))
@@ -344,6 +346,10 @@ def test_frontend_and_static_assets_are_served(client_and_keys):
     assert "runMacroMonitor" in script.text
     assert "renderMacroRegimeChart" in script.text
     assert "persistPortfolio" in script.text
+    assert 'sessionStorage.setItem("atlas_api_key"' not in script.text
+    assert 'sessionStorage.removeItem("atlas_api_key")' in script.text
+    assert "bootstrap.api_key" not in script.text
+    assert 'credentials: "same-origin"' in script.text
 
 
 def test_demo_bootstrap_is_disabled_by_default(client_and_keys):
@@ -366,11 +372,16 @@ def test_local_demo_bootstraps_and_lists_persisted_analysis(tmp_path):
     assert bootstrap.status_code == 200
     body = bootstrap.json()
     assert body["mode"] == "local-demo"
+    assert body["authentication"] == "http-only-cookie"
+    assert "api_key" not in body
     assert body["snapshot_id"].startswith("snap_")
     assert "impairment" in body["capabilities"]
+    assert "atlas_api_key=" in bootstrap.headers["set-cookie"]
+    assert "HttpOnly" in bootstrap.headers["set-cookie"]
+    assert "SameSite=strict" in bootstrap.headers["set-cookie"]
 
-    headers = {"X-API-Key": body["api_key"]}
-    portfolio = client.post("/portfolios", json=PORTFOLIO, headers=headers)
+    # TestClient retains the HttpOnly cookie just like a same-origin browser.
+    portfolio = client.post("/portfolios", json=PORTFOLIO)
     assert portfolio.status_code == 201
 
     job = client.post(
@@ -380,11 +391,10 @@ def test_local_demo_bootstraps_and_lists_persisted_analysis(tmp_path):
             "portfolio_id": portfolio.json()["portfolio_id"],
             "params": {"n_sims": 100, "seed": 7},
         },
-        headers=headers,
     )
     assert job.status_code == 202
 
-    history = client.get("/analyses", headers=headers)
+    history = client.get("/analyses")
     assert history.status_code == 200
     recent = history.json()["analyses"]
     assert recent[0]["job_id"] == job.json()["job_id"]

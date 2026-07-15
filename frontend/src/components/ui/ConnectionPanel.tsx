@@ -4,7 +4,14 @@ import { useApiKey } from "../../app/ApiKeyProvider";
 import { bootstrapLocalDemo, getApiBaseUrl } from "../../lib/api";
 
 export function ConnectionPanel() {
-  const { configured, demoMode, enableDemoMode, useBackendMode, connectionMode } = useApiKey();
+  const {
+    configured,
+    demoMode,
+    enableDemoMode,
+    useBackendMode,
+    connectionMode,
+    connectionState
+  } = useApiKey();
   const [expanded, setExpanded] = useState(!configured);
   const [status, setStatus] = useState<string | null>(null);
   const queryClient = useQueryClient();
@@ -29,7 +36,15 @@ export function ConnectionPanel() {
     <section className="connection-panel" aria-label="Connection">
       <div>
         <span className="status-dot" data-state={configured ? "ready" : "blocked"} />
-        <strong>{demoMode ? "Static demo mode" : "Backend connected"}</strong>
+        <strong>
+          {demoMode
+            ? "Static demo mode"
+            : connectionState === "checking"
+              ? "Checking backend"
+              : configured
+                ? "Backend connected"
+                : "Backend unavailable"}
+        </strong>
         <small>{demoMode ? "No backend calls" : getApiBaseUrl()}</small>
       </div>
       <button className="ghost-button" type="button" onClick={() => setExpanded((value) => !value)}>

@@ -71,7 +71,7 @@ export const reportDetailSchema = z.object({
 });
 
 export const portfolioCompanySchema = z.object({
-  company: z.string(),
+  name: z.string(),
   ebitda: z.number(),
   multiple: z.number(),
   carrying_value: z.number()
@@ -81,6 +81,9 @@ export const portfolioSchema = z.object({
   portfolio_id: z.string(),
   name: z.string(),
   companies: z.array(portfolioCompanySchema).optional(),
+  company_count: z.number().optional(),
+  current_version_id: z.string().nullable().optional(),
+  version_number: z.number().nullable().optional(),
   created_at: z.string().optional(),
   updated_at: z.string().optional()
 });
