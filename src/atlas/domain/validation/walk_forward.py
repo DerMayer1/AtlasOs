@@ -12,6 +12,15 @@ from atlas.domain.validation.classifier import fit_logistic_crisis_model
 from atlas.domain.validation.features import apply_publication_lags, build_crisis_features
 from atlas.domain.validation.metrics import binary_metrics, select_threshold
 
+VIX_OVERRIDE_LEVEL = 30.0
+VIX_SCORE_FLOOR = 25.0
+VIX_SCORE_CEILING = 40.0
+
+
+def _vix_stress_score(vix: pd.Series) -> pd.Series:
+    """Fixed market-stress score; no fold or test-period fitting."""
+    return ((vix - VIX_SCORE_FLOOR) / (VIX_SCORE_CEILING - VIX_SCORE_FLOOR)).clip(0, 1)
+
 
 @dataclass(frozen=True)
 class WalkForwardFold:
@@ -69,8 +78,8 @@ def run_walk_forward(
             features = features.join(_hmm_features(macro, fold.train_end, fold.test_end))
 
         dataset = features.join(labels.rename("target"), how="inner").dropna()
-        train = dataset.loc[:fold.train_end]
-        test = dataset.loc[fold.test_start:fold.test_end]
+        train = dataset.loc[: fold.train_end]
+        test = dataset.loc[fold.test_start : fold.test_end]
         if train.empty or test.empty:
             continue
 
@@ -102,11 +111,23 @@ def run_walk_forward(
             frame["hmm_threshold"] = hmm_threshold
 
         frame["vix_prediction"] = (
-            (macro.loc[frame.index, "vix"] > 30).astype(int) if "vix" in macro else 0
+            (macro.loc[frame.index, "vix"] > VIX_OVERRIDE_LEVEL).astype(int)
+            if "vix" in macro
+            else 0
         )
-        frame["spread_prediction"] = (
-            macro.loc[frame.index, "baa_aaa_spread"].gt(1.2).astype(int)
+        vix_score = (
+            _vix_stress_score(macro.loc[frame.index, "vix"])
+            if "vix" in macro
+            else pd.Series(0.0, index=frame.index)
         )
+        frame["hybrid_probability"] = pd.concat(
+            [frame["logistic_probability"], vix_score.rename("vix_stress_score")],
+            axis=1,
+        ).max(axis=1)
+        frame["hybrid_prediction"] = (
+            frame["logistic_prediction"] | frame["vix_prediction"]
+        ).astype(int)
+        frame["spread_prediction"] = macro.loc[frame.index, "baa_aaa_spread"].gt(1.2).astype(int)
         prediction_frames.append(frame)
 
         fold_result = binary_metrics(
@@ -122,6 +143,7 @@ def run_walk_forward(
 
     predictions = pd.concat(prediction_frames).sort_index()
     comparisons = {
+        "hybrid": ("hybrid_prediction", "hybrid_probability"),
         "logistic": ("logistic_prediction", "logistic_probability"),
         "hmm": ("hmm_prediction", "hmm_probability"),
         "vix_rule": ("vix_prediction", "vix_prediction"),

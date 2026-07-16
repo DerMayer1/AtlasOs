@@ -23,6 +23,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from atlas.domain.engines.impairment.calibration import resolved_ebitda_correlation
 from atlas.domain.engines.impairment.hmm import regime_probabilities_hmm
 from atlas.domain.engines.impairment.models import (
     CompanyFinancialProfile,
@@ -61,9 +62,7 @@ def _load_shocks() -> dict[str, tuple[float, float]]:
 _SHOCKS = _load_shocks()
 _SHOCK_MEANS = np.array([_SHOCKS[regime][0] for regime in REGIMES])
 _SHOCK_STDS = np.array([_SHOCKS[regime][1] for regime in REGIMES])
-_MULTIPLE_COMPRESSIONS = np.array(
-    [_MULTIPLE_COMPRESSION[regime] for regime in REGIMES]
-)
+_MULTIPLE_COMPRESSIONS = np.array([_MULTIPLE_COMPRESSION[regime] for regime in REGIMES])
 
 
 @dataclass(frozen=True)
@@ -115,9 +114,7 @@ def _factor_for_company(
     market_weight = math.sqrt(market_share) * company.macro_sensitivity
     sector_weight = math.sqrt(sector_share) * company.sector_sensitivity
     idiosyncratic_weight = math.sqrt(idiosyncratic_share)
-    scale = math.sqrt(
-        market_weight**2 + sector_weight**2 + idiosyncratic_weight**2
-    )
+    scale = math.sqrt(market_weight**2 + sector_weight**2 + idiosyncratic_weight**2)
     return (
         market_weight * draws.market
         + sector_weight * draws.sectors[company.sector]
@@ -137,7 +134,7 @@ def _simulate_company(
     calibrated_stds = _SHOCK_STDS[regimes]
     means = means * company.macro_sensitivity
     annual_stds = np.maximum(
-        company.ebitda_volatility,
+        company.resolved_ebitda_volatility,
         calibrated_stds * max(company.macro_sensitivity, 0.5),
     )
 
@@ -160,9 +157,7 @@ def _simulate_company(
         + math.sqrt(1.0 - correlation**2) * draws.multiple[company_index]
     )
     multiple_sigma = company.multiple_volatility * math.sqrt(horizon)
-    multiple = target_multiple * np.exp(
-        -0.5 * multiple_sigma**2 + multiple_sigma * multiple_factor
-    )
+    multiple = target_multiple * np.exp(-0.5 * multiple_sigma**2 + multiple_sigma * multiple_factor)
     multiple = np.clip(
         multiple,
         company.resolved_multiple_floor,
@@ -187,9 +182,7 @@ def _company_row(
     return {
         "p_impairment": float(np.mean(impaired)),
         "expected_impairment_loss": float(simulation.impairment_loss.mean()),
-        "expected_loss_ratio": float(
-            simulation.impairment_loss.mean() / company.carrying_value
-        ),
+        "expected_loss_ratio": float(simulation.impairment_loss.mean() / company.carrying_value),
         "recoverable_mean": float(simulation.recoverable_amount.mean()),
         "recoverable_p05": float(np.percentile(simulation.recoverable_amount, 5)),
         "recoverable_p95": float(np.percentile(simulation.recoverable_amount, 95)),
@@ -206,10 +199,13 @@ def _portfolio_row(
     losses = np.vstack([sim.impairment_loss for sim in simulations])
     portfolio_loss = losses.sum(axis=0)
     total_carrying = sum(company.carrying_value for company in companies)
-    weighted_prob = sum(
-        np.mean(sim.impairment_loss > 0) * company.carrying_value
-        for sim, company in zip(simulations, companies, strict=True)
-    ) / total_carrying
+    weighted_prob = (
+        sum(
+            np.mean(sim.impairment_loss > 0) * company.carrying_value
+            for sim, company in zip(simulations, companies, strict=True)
+        )
+        / total_carrying
+    )
     return {
         "p_any_impairment": float(np.mean(portfolio_loss > 0)),
         "carrying_weighted_p_impairment": float(weighted_prob),
@@ -229,12 +225,8 @@ def _sensitivity_rows(
     rows: list[dict[str, Any]] = []
     for company, simulation in zip(companies, simulations, strict=True):
         base_p = float(np.mean(simulation.recoverable_amount < company.carrying_value))
-        downside_p = float(
-            np.mean(simulation.recoverable_amount * 0.9 < company.carrying_value)
-        )
-        carrying_up_p = float(
-            np.mean(simulation.recoverable_amount < company.carrying_value * 1.1)
-        )
+        downside_p = float(np.mean(simulation.recoverable_amount * 0.9 < company.carrying_value))
+        carrying_up_p = float(np.mean(simulation.recoverable_amount < company.carrying_value * 1.1))
         rows.append(
             {
                 "company": company.name,
@@ -267,9 +259,7 @@ def _resilience_rows(
                 "net_leverage": net_debt / company.ebitda,
                 "annual_interest_expense": interest_expense,
                 "interest_coverage": (
-                    company.ebitda / interest_expense
-                    if interest_expense > 0
-                    else 999.0
+                    company.ebitda / interest_expense if interest_expense > 0 else 999.0
                 ),
                 "debt_due_1y": company.debt_due_1y,
                 "liquidity_gap_1y": liquidity_gap,
@@ -281,8 +271,8 @@ def _resilience_rows(
 
 class ImpairmentEngine:
     name = "impairment"
-    engine_version = "1.0.0"
-    model_version = "hmm3sc-joint-factor-1.0"
+    engine_version = "1.1.0"
+    model_version = "hmm3sc-calibrated-factor-1.1"
 
     def describe(self) -> str:
         return (
@@ -305,10 +295,20 @@ class ImpairmentEngine:
         )
         rng = np.random.default_rng(params.seed)
         sectors = sorted({company.sector for company in params.companies})
+        ebitda_correlation, correlation_source = resolved_ebitda_correlation(
+            params.companies, params.ebitda_correlation_matrix
+        )
+        company_draws = rng.standard_normal((len(params.companies), params.n_sims))
+        if ebitda_correlation is not None:
+            eigenvalues, eigenvectors = np.linalg.eigh(ebitda_correlation)
+            square_root = (
+                eigenvectors @ np.diag(np.sqrt(np.maximum(eigenvalues, 0.0))) @ eigenvectors.T
+            )
+            company_draws = square_root @ company_draws
         draws = FactorDraws(
             market=rng.standard_normal(params.n_sims),
             sectors={sector: rng.standard_normal(params.n_sims) for sector in sectors},
-            company=rng.standard_normal((len(params.companies), params.n_sims)),
+            company=company_draws,
             multiple=rng.standard_normal((len(params.companies), params.n_sims)),
             base_regimes=rng.choice(
                 len(REGIMES),
@@ -338,9 +338,7 @@ class ImpairmentEngine:
                 ]
                 if scenario == "base" and horizon == base_horizon:
                     base_simulations = simulations
-                for company, simulation in zip(
-                    params.companies, simulations, strict=True
-                ):
+                for company, simulation in zip(params.companies, simulations, strict=True):
                     company_scenario_rows.append(
                         {
                             "case": f"{company.name}|{scenario}|{horizon}y",
@@ -358,9 +356,7 @@ class ImpairmentEngine:
             raise RuntimeError("base scenario was not simulated")
         score_rows = [
             {"company": company.name, **_company_row(company, simulation)}
-            for company, simulation in zip(
-                params.companies, base_simulations, strict=True
-            )
+            for company, simulation in zip(params.companies, base_simulations, strict=True)
         ]
         scores = pd.DataFrame(score_rows)
 
@@ -386,25 +382,32 @@ class ImpairmentEngine:
             "portfolio_carrying_weighted_p_impairment": float(
                 base_portfolio["carrying_weighted_p_impairment"]
             ),
-            "portfolio_expected_impairment_loss": float(
-                base_portfolio["expected_impairment_loss"]
-            ),
-            "portfolio_expected_loss_ratio": float(
-                base_portfolio["expected_loss_ratio"]
-            ),
+            "portfolio_expected_impairment_loss": float(base_portfolio["expected_impairment_loss"]),
+            "portfolio_expected_loss_ratio": float(base_portfolio["expected_loss_ratio"]),
             "portfolio_loss_p95": float(base_portfolio["loss_p95"]),
-            "portfolio_p_any_impairment": float(
-                base_portfolio["p_any_impairment"]
-            ),
+            "portfolio_p_any_impairment": float(base_portfolio["p_any_impairment"]),
             "portfolio_max_p_impairment": float(scores["p_impairment"].max()),
             "n_companies": float(len(scores)),
             **{f"p_regime_{r}": float(regime_probs[r]) for r in REGIMES},
         }
+        risk_calibration = {
+            "ebitda_correlation_source": correlation_source,
+            "ebitda_correlation_matrix": (
+                ebitda_correlation.tolist() if ebitda_correlation is not None else None
+            ),
+            "companies": [
+                {
+                    "name": company.name,
+                    "ebitda_volatility": company.resolved_ebitda_volatility,
+                    "ebitda_volatility_source": company.ebitda_volatility_source,
+                    "history_observations": len(company.ebitda_history),
+                }
+                for company in params.companies
+            ],
+        }
         for row in portfolio_scenario_rows:
             scenario, horizon = row["case"].split("|")
-            metrics[f"{scenario}_{horizon}_expected_loss_ratio"] = float(
-                row["expected_loss_ratio"]
-            )
+            metrics[f"{scenario}_{horizon}_expected_loss_ratio"] = float(row["expected_loss_ratio"])
 
         artifacts = [
             ctx.artifacts.publish(
@@ -446,6 +449,11 @@ class ImpairmentEngine:
                 ctx.run_id,
                 "metrics.json",
                 json.dumps(metrics, indent=2, sort_keys=True).encode(),
+            ),
+            ctx.artifacts.publish(
+                ctx.run_id,
+                "risk_calibration.json",
+                json.dumps(risk_calibration, indent=2, sort_keys=True).encode(),
             ),
         ]
 

@@ -5,10 +5,11 @@ walk-forward tests; no model parameter or threshold is fitted on a test period.*
 
 | | |
 |---|---|
-| Snapshot | `snap_3af93c9ff49dac95` |
-| Data period | 1990-01-31 to 2026-05-31 (monthly) |
+| Snapshot | `snap_f7658448791f0610` |
+| Data period | 1990-01-31 to 2026-06-30 (monthly) |
+| Data source | Revised FRED history (provisional development run) |
 | Primary target | Strict NBER recession months, contemporaneous detection |
-| Primary model | L2 logistic regression over causal macro, VIX and HMM features |
+| Primary model | Causal logistic score with fixed VIX stress override |
 | Operating rule | Maximize training precision subject to at least 60% training recall |
 
 ## 1. Primary out-of-sample comparison
@@ -18,10 +19,11 @@ logistic thresholds are selected only from each fold's training history.
 
 | model | precision | recall | f1 | pr_auc | brier | false_alerts_per_year |
 |---|---|---|---|---|---|---|
+| hybrid | 0.556 | 0.645 | 0.597 | 0.686 | 0.095 | 0.941 |
 | logistic | 0.786 | 0.355 | 0.489 | 0.515 | 0.115 | 0.176 |
-| hmm | 0.108 | 0.387 | 0.169 | 0.121 | 0.478 | 5.824 |
-| vix_rule | 0.464 | 0.419 | 0.441 | 0.452 | 0.168 | 0.882 |
-| spread_rule | 0.385 | 0.645 | 0.482 | 0.358 | 0.219 | 1.882 |
+| hmm | 0.108 | 0.387 | 0.169 | 0.120 | 0.476 | 5.824 |
+| vix_rule | 0.464 | 0.419 | 0.441 | 0.441 | 0.168 | 0.882 |
+| spread_rule | 0.385 | 0.645 | 0.482 | 0.371 | 0.218 | 1.882 |
 
 `false_alerts_per_year` is the operational false-positive burden. `pr_auc` is
 preferred over overall accuracy because crisis months are rare. The Brier score
@@ -43,7 +45,7 @@ flag there counts as a false alert in the primary score.
 
 ## 3. Detection lag
 
-- Crisis starting 2001-03: **not detected** within 12 months
+- Crisis starting 2001-03: detected after **6 month(s)**
 - Crisis starting 2007-12: detected after **1 month(s)**
 - Crisis starting 2020-02: detected after **1 month(s)**
 
@@ -54,11 +56,11 @@ training-selected threshold during the first labeled crisis month.
 
 | probability bin | observations | mean_probability | crisis_rate |
 |---|---|---|---|
-| (-0.001, 0.2] | 181.000 | 0.003 | 0.105 |
-| (0.2, 0.4] | 1.000 | 0.212 | 1.000 |
-| (0.4, 0.6] | 1.000 | 0.486 | 1.000 |
-| (0.6, 0.8] | 1.000 | 0.610 | 1.000 |
-| (0.8, 1.0] | 12.000 | 0.967 | 0.750 |
+| (-0.001, 0.2] | 152.000 | 0.008 | 0.053 |
+| (0.2, 0.4] | 12.000 | 0.277 | 0.333 |
+| (0.4, 0.6] | 9.000 | 0.493 | 0.333 |
+| (0.6, 0.8] | 6.000 | 0.667 | 0.333 |
+| (0.8, 1.0] | 18.000 | 0.967 | 0.778 |
 
 ![Out-of-sample calibration](figures/crisis_calibration.png)
 
@@ -66,8 +68,8 @@ training-selected threshold during the first labeled crisis month.
 
 | target | precision | recall | f1 | pr_auc | brier | false_alerts_per_year |
 |---|---|---|---|---|---|---|
-| strict_nber | 0.786 | 0.355 | 0.489 | 0.515 | 0.115 | 0.176 |
-| broader_stress | 0.778 | 0.429 | 0.553 | 0.617 | 0.168 | 0.353 |
+| strict_nber | 0.556 | 0.645 | 0.597 | 0.686 | 0.095 | 0.941 |
+| broader_stress | 0.738 | 0.633 | 0.681 | 0.750 | 0.123 | 0.647 |
 
 `strict_nber` is the primary benchmark. `broader_stress` includes extended
 credit-stress periods and 2011. Publishing both prevents label choices from
@@ -98,8 +100,7 @@ causal economic importance.
 - Standardization, HMM fitting, logistic fitting and threshold selection happen
   inside each training fold.
 - Test periods are never used to select model parameters or thresholds.
-- The data are current revised FRED series, not vintage ALFRED releases. This
-  remains a source of revision look-ahead and is the next data-quality upgrade.
+- This provisional run uses revised FRED history. Set `ATLAS_VALIDATION_DATA_SOURCE=alfred` with `ATLAS_FRED_API_KEY` before treating the metrics as release evidence.
 
 ## 8. Crisis probabilities
 
@@ -122,9 +123,7 @@ is separate from crisis-classifier validation.
 
 ## 10. Interpretation
 
-- The logistic model is the candidate classifier; HMM remains a feature and
-  benchmark rather than the final crisis decision.
-- Precision, recall, PR-AUC, calibration and false-alert burden must all improve
-  before the classifier is promoted into the impairment engine.
+- The hybrid classifier combines the calibrated logistic score with a fixed,
+  causal VIX stress override. HMM remains a feature and benchmark.
 - This report does not claim deployable forecasting skill. It establishes a
   leakage-controlled baseline that future feature and model changes must beat.

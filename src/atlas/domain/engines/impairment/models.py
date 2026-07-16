@@ -4,9 +4,15 @@ from __future__ import annotations
 
 from typing import Literal
 
+import numpy as np
 from pydantic import BaseModel, Field, model_validator
 
 ScenarioName = Literal["base", "tightening", "crisis"]
+
+
+class HistoricalEbitdaPoint(BaseModel):
+    year: int = Field(ge=1900, le=2200)
+    value: float = Field(gt=0)
 
 
 class CompanyFinancialProfile(BaseModel):
@@ -24,7 +30,8 @@ class CompanyFinancialProfile(BaseModel):
     carrying_value: float = Field(gt=0)
 
     ebitda_margin: float | None = Field(default=None, gt=0, le=1)
-    ebitda_volatility: float = Field(default=0.30, gt=0, le=1.5)
+    ebitda_history: list[HistoricalEbitdaPoint] = Field(default_factory=list)
+    ebitda_volatility: float | None = Field(default=None, gt=0, le=1.5)
     macro_sensitivity: float = Field(default=1.0, ge=0, le=3.0)
     sector_sensitivity: float = Field(default=1.0, ge=0, le=3.0)
 
@@ -46,6 +53,12 @@ class CompanyFinancialProfile(BaseModel):
             raise ValueError("multiple_floor must be lower than multiple_ceiling")
         if not floor <= self.multiple <= ceiling:
             raise ValueError("multiple must be inside the configured multiple range")
+        if self.ebitda_history:
+            years = [point.year for point in self.ebitda_history]
+            if len(years) < 4:
+                raise ValueError("ebitda_history requires at least four annual observations")
+            if len(set(years)) != len(years) or years != sorted(years):
+                raise ValueError("ebitda_history years must be unique and ascending")
         return self
 
     @property
@@ -62,15 +75,31 @@ class CompanyFinancialProfile(BaseModel):
             return self.annual_interest_expense
         return self.debt * self.interest_rate
 
+    @property
+    def resolved_ebitda_volatility(self) -> float:
+        if self.ebitda_volatility is not None:
+            return self.ebitda_volatility
+        if self.ebitda_history:
+            values = np.array([point.value for point in self.ebitda_history], dtype=float)
+            estimate = float(np.std(np.diff(np.log(values)), ddof=1))
+            return min(1.5, max(0.05, estimate))
+        return 0.30
+
+    @property
+    def ebitda_volatility_source(self) -> str:
+        if self.ebitda_volatility is not None:
+            return "user"
+        if self.ebitda_history:
+            return "company-history"
+        return "aggregate-fallback"
+
 
 class ImpairmentParams(BaseModel):
     companies: list[CompanyFinancialProfile] = Field(min_length=1)
     n_sims: int = Field(default=10_000, ge=100, le=1_000_000)
     seed: int = Field(default=0, ge=0)
     regime_model: Literal["hmm", "zscore"] = "hmm"
-    scenarios: list[ScenarioName] = Field(
-        default_factory=lambda: ["base", "tightening", "crisis"]
-    )
+    scenarios: list[ScenarioName] = Field(default_factory=lambda: ["base", "tightening", "crisis"])
     horizons_years: list[Literal[1, 3]] = Field(default_factory=lambda: [1, 3])
 
     # Variance shares in the EBITDA factor model. The residual is company
@@ -78,17 +107,27 @@ class ImpairmentParams(BaseModel):
     market_variance_share: float = Field(default=0.35, ge=0, lt=1)
     sector_variance_share: float = Field(default=0.25, ge=0, lt=1)
     multiple_ebitda_correlation: float = Field(default=0.55, ge=-0.95, le=0.95)
+    ebitda_correlation_matrix: list[list[float]] | None = None
 
     @model_validator(mode="after")
     def validate_simulation_design(self) -> ImpairmentParams:
         if self.market_variance_share + self.sector_variance_share >= 1:
-            raise ValueError(
-                "market_variance_share + sector_variance_share must be lower than 1"
-            )
+            raise ValueError("market_variance_share + sector_variance_share must be lower than 1")
         if "base" not in self.scenarios:
             raise ValueError("scenarios must include 'base'")
         if len(set(self.scenarios)) != len(self.scenarios):
             raise ValueError("scenarios must not contain duplicates")
         if len(set(self.horizons_years)) != len(self.horizons_years):
             raise ValueError("horizons_years must not contain duplicates")
+        if self.ebitda_correlation_matrix is not None:
+            matrix = np.asarray(self.ebitda_correlation_matrix, dtype=float)
+            expected = (len(self.companies), len(self.companies))
+            if matrix.shape != expected:
+                raise ValueError(f"ebitda_correlation_matrix must have shape {expected}")
+            if not np.allclose(matrix, matrix.T, atol=1e-8):
+                raise ValueError("ebitda_correlation_matrix must be symmetric")
+            if not np.allclose(np.diag(matrix), 1.0, atol=1e-8):
+                raise ValueError("ebitda_correlation_matrix diagonal must equal 1")
+            if np.min(np.linalg.eigvalsh(matrix)) < -1e-8:
+                raise ValueError("ebitda_correlation_matrix must be positive semidefinite")
         return self

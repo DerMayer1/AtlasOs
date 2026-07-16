@@ -43,6 +43,7 @@ class AgentService:
         params: dict,
         portfolio_id: str | None = None,
         portfolio_context: str = "",
+        org_id: str = "org_default",
     ) -> AgentAnswer:
         t0 = time.monotonic()
         trace_id = f"trace_{uuid.uuid4().hex[:12]}"
@@ -53,28 +54,36 @@ class AgentService:
         # honest refusal — not a degradation, a correct "cannot" (PRD edge case)
         if plan.is_refusal:
             answer = AgentAnswer(
-                trace_id=trace_id, question=question, plan=plan,
-                capabilities=caps, llm_model=self.llm.model,
+                trace_id=trace_id,
+                question=question,
+                plan=plan,
+                capabilities=caps,
+                llm_model=self.llm.model,
                 latency_ms=_elapsed_ms(t0),
             )
-            self.trace_store.save(answer, PROMPT_VERSION, portfolio_id)
+            self.trace_store.save(answer, PROMPT_VERSION, portfolio_id, org_id)
             return answer
 
-        executed, results = self._run_plan(plan, snapshot_id, params, portfolio_id)
+        executed, results = self._run_plan(plan, snapshot_id, params, portfolio_id, org_id)
         ok_results = [r for r in results if r is not None]
 
-        narrative, citation_report, degraded, reason, usage = self._narrate(
-            question, ok_results
-        )
+        narrative, citation_report, degraded, reason, usage = self._narrate(question, ok_results)
 
         answer = AgentAnswer(
-            trace_id=trace_id, question=question, plan=plan, executed=executed,
-            narrative=narrative, citations=citation_report,
-            degraded=degraded, degraded_reason=reason,
-            capabilities=caps, llm_model=self.llm.model, usage=usage,
+            trace_id=trace_id,
+            question=question,
+            plan=plan,
+            executed=executed,
+            narrative=narrative,
+            citations=citation_report,
+            degraded=degraded,
+            degraded_reason=reason,
+            capabilities=caps,
+            llm_model=self.llm.model,
+            usage=usage,
             latency_ms=_elapsed_ms(t0),
         )
-        self.trace_store.save(answer, PROMPT_VERSION, portfolio_id)
+        self.trace_store.save(answer, PROMPT_VERSION, portfolio_id, org_id)
         return answer
 
     def narrate(self, question: str, results: list[AnalysisResult]):
@@ -89,7 +98,12 @@ class AgentService:
     # -- internals ----------------------------------------------------------
 
     def _run_plan(
-        self, plan: Plan, snapshot_id: str, params: dict, portfolio_id: str | None
+        self,
+        plan: Plan,
+        snapshot_id: str,
+        params: dict,
+        portfolio_id: str | None,
+        org_id: str,
     ) -> tuple[list[ExecutedCall], list[AnalysisResult | None]]:
         executed: list[ExecutedCall] = []
         results: list[AnalysisResult | None] = []
@@ -98,8 +112,13 @@ class AgentService:
             with self.session_factory() as session:
                 session.add(
                     AnalysisRow(
-                        id=run_id, portfolio_id=portfolio_id, engine=call.engine,
-                        snapshot_id=snapshot_id, params=params, status="queued",
+                        id=run_id,
+                        org_id=org_id,
+                        portfolio_id=portfolio_id,
+                        engine=call.engine,
+                        snapshot_id=snapshot_id,
+                        params=params,
+                        status="queued",
                     )
                 )
                 session.commit()
@@ -107,8 +126,11 @@ class AgentService:
             t0 = time.monotonic()
             try:
                 execute_analysis(
-                    run_id, self.session_factory, self.registry,
-                    self.snapshots, self.artifacts,
+                    run_id,
+                    self.session_factory,
+                    self.registry,
+                    self.snapshots,
+                    self.artifacts,
                 )
             except Exception:
                 pass  # failure is persisted on the row; reflected below
@@ -118,7 +140,9 @@ class AgentService:
                 result = AnalysisResult.model_validate(row.result) if row.result else None
                 executed.append(
                     ExecutedCall(
-                        engine=call.engine, run_id=run_id, status=row.status,
+                        engine=call.engine,
+                        run_id=run_id,
+                        status=row.status,
                         latency_ms=_elapsed_ms(t0),
                         result_id=result.result_id if result else None,
                         error=row.error,
@@ -146,14 +170,20 @@ class AgentService:
             # both attempts produced orphan/invalid citations -> numbers-only
             template = narrator.template_narrative(ok_results, self.artifacts)
             return (
-                template, citations.validate(template, self.artifacts), True,
-                "LLM narrative failed citation validation; degraded to numbers-only", usage,
+                template,
+                citations.validate(template, self.artifacts),
+                True,
+                "LLM narrative failed citation validation; degraded to numbers-only",
+                usage,
             )
         except LLMUnavailableError as exc:
             template = narrator.template_narrative(ok_results, self.artifacts)
             return (
-                template, citations.validate(template, self.artifacts), True,
-                f"LLM unavailable ({exc}); degraded to numbers-only", usage,
+                template,
+                citations.validate(template, self.artifacts),
+                True,
+                f"LLM unavailable ({exc}); degraded to numbers-only",
+                usage,
             )
 
 

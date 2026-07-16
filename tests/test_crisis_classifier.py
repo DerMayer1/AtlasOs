@@ -37,12 +37,10 @@ def test_publication_lags_do_not_expose_current_month_macro_release():
     macro, _ = _validation_macro(periods=24)
     lagged = apply_publication_lags(macro)
     assert lagged.loc[macro.index[1], "cpi_yoy"] == macro.loc[macro.index[0], "cpi_yoy"]
-    assert lagged.loc[macro.index[1], "unemployment"] == macro.loc[
-        macro.index[0], "unemployment"
-    ]
-    assert lagged.loc[macro.index[1], "baa_aaa_spread"] == macro.loc[
-        macro.index[1], "baa_aaa_spread"
-    ]
+    assert lagged.loc[macro.index[1], "unemployment"] == macro.loc[macro.index[0], "unemployment"]
+    assert (
+        lagged.loc[macro.index[1], "baa_aaa_spread"] == macro.loc[macro.index[1], "baa_aaa_spread"]
+    )
 
 
 def test_logistic_model_is_deterministic_and_separates_signal():
@@ -70,3 +68,21 @@ def test_walk_forward_does_not_use_data_after_fold():
         rerun.predictions["logistic_probability"],
     )
     assert original.aggregate_metrics.loc["logistic", "recall"] > 0.0
+
+
+def test_hybrid_classifier_adds_fixed_vix_recall_without_future_fitting():
+    macro, labels = _validation_macro()
+    fold = WalkForwardFold("held_out", "2007-12", "2008-01", "2014-12")
+
+    result = run_walk_forward(macro, labels, folds=(fold,), include_hmm=False)
+
+    assert "hybrid_probability" in result.predictions
+    assert (
+        result.aggregate_metrics.loc["hybrid", "recall"]
+        >= result.aggregate_metrics.loc["logistic", "recall"]
+    )
+    assert (
+        result.predictions.loc[macro.loc[result.predictions.index, "vix"] > 30, "hybrid_prediction"]
+        .eq(1)
+        .all()
+    )

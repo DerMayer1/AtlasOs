@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     # Empty redis_url = in-process queue (dev/tests). Set for ARQ + Redis.
     redis_url: str = ""
     data_dir: Path = Path("var/data")
+    # Required for ALFRED point-in-time validation. Kept server-side.
+    fred_api_key: str = ""
     # Dev convenience: create tables directly for SQLite. Postgres uses Alembic.
     auto_create_schema: bool = True
     job_max_tries: int = 3

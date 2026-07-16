@@ -1,9 +1,4 @@
-"""Postgres is the source of truth (PRD R3).
-
-org_id columns are nullable placeholders for multi-tenancy (PRD P2): present in
-the schema from day one, no logic implemented. Engine outputs remain JSON;
-portfolio financial inputs are normalized and versioned for reproducibility.
-"""
+"""Postgres is the source of truth (PRD R3), scoped by organization."""
 
 from __future__ import annotations
 
@@ -20,11 +15,20 @@ class Base(DeclarativeBase):
     type_annotation_map = {dict[str, Any]: JSON, list[Any]: JSON}
 
 
+class OrganizationRow(Base):
+    __tablename__ = "organizations"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    slug: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class PortfolioRow(Base):
     __tablename__ = "portfolios"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    org_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    org_id: Mapped[str] = mapped_column(String(64), default="org_default", index=True)
     name: Mapped[str] = mapped_column(String(200))
     companies: Mapped[list[Any]] = mapped_column(JSON)
     current_version_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -82,7 +86,8 @@ class PortfolioCompanyInputRow(Base):
     multiple: Mapped[float] = mapped_column(Float)
     carrying_value: Mapped[float] = mapped_column(Float)
     ebitda_margin: Mapped[float | None] = mapped_column(Float, nullable=True)
-    ebitda_volatility: Mapped[float] = mapped_column(Float)
+    ebitda_history: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    ebitda_volatility: Mapped[float | None] = mapped_column(Float, nullable=True)
     macro_sensitivity: Mapped[float] = mapped_column(Float)
     sector_sensitivity: Mapped[float] = mapped_column(Float)
     multiple_volatility: Mapped[float] = mapped_column(Float)
@@ -99,7 +104,7 @@ class AnalysisRow(Base):
     __tablename__ = "analyses"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)  # doubles as run_id
-    org_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    org_id: Mapped[str] = mapped_column(String(64), default="org_default", index=True)
     portfolio_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     portfolio_version_id: Mapped[str | None] = mapped_column(
         String(64),
@@ -137,7 +142,7 @@ class ReportRow(Base):
         ForeignKey("analyses.id"),
         index=True,
     )
-    org_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    org_id: Mapped[str] = mapped_column(String(64), default="org_default", index=True)
     engine: Mapped[str] = mapped_column(String(100))
     headline: Mapped[str] = mapped_column(Text)
     action_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -173,7 +178,7 @@ class AgentTraceRow(Base):
     __tablename__ = "agent_traces"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    org_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    org_id: Mapped[str] = mapped_column(String(64), default="org_default", index=True)
     portfolio_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     question: Mapped[str] = mapped_column(Text)
     plan: Mapped[dict[str, Any]] = mapped_column(JSON)
@@ -197,7 +202,7 @@ class ApiKeyRow(Base):
     __tablename__ = "api_keys"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    org_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    org_id: Mapped[str] = mapped_column(String(64), default="org_default", index=True)
     name: Mapped[str] = mapped_column(String(200))
     key_hash: Mapped[str] = mapped_column(String(64), unique=True)  # sha256 of the token
     scopes: Mapped[str] = mapped_column(String(100))  # comma-separated: "read,run"

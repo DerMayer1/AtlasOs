@@ -14,6 +14,7 @@ averaged within the month. cpi_yoy is the 12-month percent change of CPIAUCSL.
 from __future__ import annotations
 
 import io
+import re
 import time
 from datetime import timedelta
 from pathlib import Path
@@ -22,6 +23,7 @@ import httpx
 import pandas as pd
 
 FREDGRAPH_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv"
+ALFRED_OBSERVATIONS_URL = "https://api.stlouisfed.org/fred/series/observations"
 
 # series name -> (FRED id, native frequency)
 SERIES = {
@@ -140,6 +142,99 @@ class FredClient:
         else:
             series = self._fetch_csv(fred_id)
 
+        series.to_frame().to_parquet(cache_file)
+        return series
+
+
+class AlfredClient:
+    """Point-in-time macro history using each observation's initial release.
+
+    ALFRED is exposed through the FRED API real-time parameters. ``output_type=4``
+    returns only initial releases, so a historical feature can never contain a
+    revision published after the observation was first available.
+    """
+
+    def __init__(
+        self,
+        cache_dir: str | Path,
+        api_key: str = "",
+        transport: httpx.BaseTransport | None = None,
+        timeout: float = 30.0,
+        offline: bool = False,
+    ) -> None:
+        if not offline and not re.fullmatch(r"[a-z0-9]{32}", api_key):
+            raise FredIngestionError("ALFRED ingestion requires a 32-character ATLAS_FRED_API_KEY")
+        self.cache_dir = Path(cache_dir)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.api_key = api_key
+        self._client = httpx.Client(transport=transport, timeout=timeout, follow_redirects=True)
+        self.offline = offline
+
+    def _fetch_initial_release(self, fred_id: str, start: str | None = None) -> pd.Series:
+        params: dict[str, str | int] = {
+            "series_id": fred_id,
+            "api_key": self.api_key,
+            "file_type": "json",
+            "output_type": 4,
+            "limit": 100_000,
+        }
+        if start:
+            params["observation_start"] = start
+
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            try:
+                response = self._client.get(ALFRED_OBSERVATIONS_URL, params=params)
+                break
+            except httpx.HTTPError as exc:
+                last_exc = exc
+                time.sleep(2**attempt)
+        else:
+            raise FredIngestionError(f"ALFRED unreachable for {fred_id}: {last_exc}")
+
+        if response.status_code != 200:
+            raise FredIngestionError(f"ALFRED returned {response.status_code} for {fred_id}")
+        try:
+            payload = response.json()
+            observations = payload["observations"]
+        except (ValueError, KeyError, TypeError) as exc:
+            raise FredIngestionError(f"malformed ALFRED JSON for {fred_id}: {exc}") from exc
+        if int(payload.get("count", len(observations))) > len(observations):
+            raise FredIngestionError(f"ALFRED response was truncated for {fred_id}")
+
+        frame = pd.DataFrame(observations)
+        if frame.empty or not {"date", "value"}.issubset(frame.columns):
+            raise FredIngestionError(f"no initial-release observations for {fred_id}")
+        series = pd.Series(
+            pd.to_numeric(frame["value"], errors="coerce").to_numpy(),
+            index=pd.to_datetime(frame["date"], errors="coerce"),
+            name=fred_id,
+        ).dropna()
+        series = series[~series.index.duplicated(keep="first")].sort_index()
+        if series.empty or series.index.hasnans:
+            raise FredIngestionError(f"invalid initial-release observations for {fred_id}")
+        return series
+
+    def get_series(self, name: str) -> pd.Series:
+        fred_id, freq = SERIES[name]
+        return self.get_raw(fred_id, daily=freq == "daily")
+
+    def get_raw(self, fred_id: str, daily: bool = False) -> pd.Series:
+        del daily  # The API handles both native frequencies below its 100k limit.
+        cache_file = self.cache_dir / f"{fred_id}.parquet"
+        if cache_file.exists():
+            cached = pd.read_parquet(cache_file)[fred_id]
+            if self.offline:
+                return cached
+            start = (cached.index.max() - timedelta(days=60)).strftime("%Y-%m-%d")
+            fresh = self._fetch_initial_release(fred_id, start=start)
+            series = pd.concat([cached[cached.index < fresh.index.min()], fresh])
+        elif self.offline:
+            raise FredIngestionError(f"offline ALFRED cache missing for {fred_id}: {cache_file}")
+        else:
+            series = self._fetch_initial_release(fred_id)
+
+        series = series[~series.index.duplicated(keep="first")].sort_index()
         series.to_frame().to_parquet(cache_file)
         return series
 

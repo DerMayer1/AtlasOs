@@ -20,10 +20,16 @@ class TraceStore:
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self._sf = session_factory
 
-    def save(self, answer: AgentAnswer, prompt_version: str,
-             portfolio_id: str | None = None) -> None:
+    def save(
+        self,
+        answer: AgentAnswer,
+        prompt_version: str,
+        portfolio_id: str | None = None,
+        org_id: str = "org_default",
+    ) -> None:
         row = AgentTraceRow(
             id=answer.trace_id,
+            org_id=org_id,
             portfolio_id=portfolio_id,
             question=answer.question,
             plan=answer.plan.model_dump(mode="json"),
@@ -45,32 +51,46 @@ class TraceStore:
             session.add(row)
             session.commit()
 
-    def get(self, trace_id: str) -> AgentTraceRow | None:
+    def get(self, trace_id: str, org_id: str = "org_default") -> AgentTraceRow | None:
         with self._sf() as session:
-            return session.get(AgentTraceRow, trace_id)
+            return session.execute(
+                select(AgentTraceRow).where(
+                    AgentTraceRow.id == trace_id, AgentTraceRow.org_id == org_id
+                )
+            ).scalar_one_or_none()
 
-    def by_portfolio(self, portfolio_id: str) -> list[AgentTraceRow]:
+    def by_portfolio(
+        self, portfolio_id: str, org_id: str = "org_default"
+    ) -> list[AgentTraceRow]:
         with self._sf() as session:
             return list(
                 session.execute(
                     select(AgentTraceRow)
-                    .where(AgentTraceRow.portfolio_id == portfolio_id)
+                    .where(
+                        AgentTraceRow.portfolio_id == portfolio_id,
+                        AgentTraceRow.org_id == org_id,
+                    )
                     .order_by(AgentTraceRow.created_at.desc())
                 ).scalars()
             )
 
-    def by_run(self, run_id: str) -> list[AgentTraceRow]:
+    def by_run(self, run_id: str, org_id: str = "org_default") -> list[AgentTraceRow]:
         with self._sf() as session:
-            rows = session.execute(select(AgentTraceRow)).scalars()
+            rows = session.execute(
+                select(AgentTraceRow).where(AgentTraceRow.org_id == org_id)
+            ).scalars()
             return [r for r in rows if run_id in (r.run_ids or [])]
 
-    def by_period(self, start: datetime, end: datetime) -> list[AgentTraceRow]:
+    def by_period(
+        self, start: datetime, end: datetime, org_id: str = "org_default"
+    ) -> list[AgentTraceRow]:
         with self._sf() as session:
             return list(
                 session.execute(
                     select(AgentTraceRow)
                     .where(AgentTraceRow.created_at >= start)
                     .where(AgentTraceRow.created_at <= end)
+                    .where(AgentTraceRow.org_id == org_id)
                     .order_by(AgentTraceRow.created_at.desc())
                 ).scalars()
             )

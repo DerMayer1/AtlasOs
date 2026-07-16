@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -5,6 +7,8 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from atlas.domain.engines.impairment import ImpairmentEngine
+from atlas.domain.engines.impairment.calibration import estimate_ebitda_correlation
+from atlas.domain.engines.impairment.models import CompanyFinancialProfile
 from atlas.domain.engines.impairment.regimes import REGIMES, regime_probabilities
 from atlas.platform.contracts.schemas import AnalysisRequest, AnalysisStatus
 from atlas.platform.contracts.worker import AnalysisWorker, RunContext
@@ -93,6 +97,7 @@ def test_run_produces_provenance_and_artifacts(macro_snapshot, snapshot_store, a
         "sensitivities.csv",
         "value_correlation.csv",
         "metrics.json",
+        "risk_calibration.json",
     }
     scores = pd.read_csv(artifact_store.open_path("run_1/impairment_scores.csv"))
     assert list(scores["company"]) == ["Alpha", "Beta"]
@@ -100,6 +105,48 @@ def test_run_produces_provenance_and_artifacts(macro_snapshot, snapshot_store, a
     assert (scores["expected_impairment_loss"] >= 0).all()
     assert (scores["recoverable_p05"] <= scores["recoverable_mean"]).all()
     assert (scores["recoverable_mean"] <= scores["recoverable_p95"]).all()
+
+
+def test_company_history_calibrates_volatility_and_dependence():
+    histories = [
+        [100, 110, 121, 133.1, 146.4],
+        [80, 84, 92, 98, 108],
+    ]
+    companies = [
+        CompanyFinancialProfile(
+            name=name,
+            ebitda=values[-1],
+            multiple=8,
+            carrying_value=900,
+            ebitda_history=[
+                {"year": 2020 + index, "value": value} for index, value in enumerate(values)
+            ],
+        )
+        for name, values in zip(["Alpha", "Beta"], histories, strict=True)
+    ]
+
+    assert companies[0].ebitda_volatility_source == "company-history"
+    assert 0.05 <= companies[0].resolved_ebitda_volatility < 0.30
+    correlation = estimate_ebitda_correlation(companies)
+    assert correlation is not None
+    assert correlation.shape == (2, 2)
+    assert np.allclose(np.diag(correlation), 1.0)
+
+
+def test_engine_publishes_risk_calibration_provenance(
+    macro_snapshot, snapshot_store, artifact_store
+):
+    ImpairmentEngine().run(
+        _request(macro_snapshot.snapshot_id),
+        RunContext("run_calibration", snapshot_store, artifact_store),
+    )
+    payload = json.loads(
+        artifact_store.open_path("run_calibration/risk_calibration.json").read_text()
+    )
+
+    assert payload["ebitda_correlation_source"] == "structural-fallback"
+    assert payload["companies"][0]["ebitda_volatility_source"] == "aggregate-fallback"
+    assert payload["companies"][1]["ebitda_volatility_source"] == "user"
 
 
 def test_scenarios_publish_decision_relevant_loss_distribution(
@@ -113,16 +160,15 @@ def test_scenarios_publish_decision_relevant_loss_distribution(
         artifact_store.open_path("run_scenarios/portfolio_scenarios.csv")
     ).set_index("case")
 
-    assert {"base|1y", "base|3y", "tightening|1y", "crisis|1y"} <= set(
-        scenarios.index
+    assert {"base|1y", "base|3y", "tightening|1y", "crisis|1y"} <= set(scenarios.index)
+    assert (
+        scenarios.loc["crisis|1y", "expected_loss_ratio"]
+        > scenarios.loc["tightening|1y", "expected_loss_ratio"]
     )
-    assert scenarios.loc["crisis|1y", "expected_loss_ratio"] > scenarios.loc[
-        "tightening|1y", "expected_loss_ratio"
-    ]
     assert result.metrics["portfolio_expected_impairment_loss"] >= 0
-    assert result.metrics["portfolio_loss_p95"] >= result.metrics[
-        "portfolio_expected_impairment_loss"
-    ]
+    assert (
+        result.metrics["portfolio_loss_p95"] >= result.metrics["portfolio_expected_impairment_loss"]
+    )
 
 
 def test_joint_model_has_explicit_nonperfect_dependence(
@@ -158,18 +204,10 @@ def test_debt_changes_resilience_not_accounting_impairment(
         high_debt,
         RunContext("run_high_debt", snapshot_store, artifact_store),
     )
-    low_scores = next(
-        a.sha256 for a in low.artifacts if a.name == "impairment_scores.csv"
-    )
-    high_scores = next(
-        a.sha256 for a in high.artifacts if a.name == "impairment_scores.csv"
-    )
-    low_resilience = next(
-        a.sha256 for a in low.artifacts if a.name == "financial_resilience.csv"
-    )
-    high_resilience = next(
-        a.sha256 for a in high.artifacts if a.name == "financial_resilience.csv"
-    )
+    low_scores = next(a.sha256 for a in low.artifacts if a.name == "impairment_scores.csv")
+    high_scores = next(a.sha256 for a in high.artifacts if a.name == "impairment_scores.csv")
+    low_resilience = next(a.sha256 for a in low.artifacts if a.name == "financial_resilience.csv")
+    high_resilience = next(a.sha256 for a in high.artifacts if a.name == "financial_resilience.csv")
 
     assert low_scores == high_scores
     assert low_resilience != high_resilience
@@ -194,12 +232,11 @@ def test_higher_carrying_value_increases_impairment_risk(
         RunContext("run_high_carrying", snapshot_store, artifact_store),
     )
 
-    assert high.metrics["portfolio_mean_p_impairment"] > low.metrics[
-        "portfolio_mean_p_impairment"
-    ]
-    assert high.metrics["portfolio_expected_impairment_loss"] > low.metrics[
-        "portfolio_expected_impairment_loss"
-    ]
+    assert high.metrics["portfolio_mean_p_impairment"] > low.metrics["portfolio_mean_p_impairment"]
+    assert (
+        high.metrics["portfolio_expected_impairment_loss"]
+        > low.metrics["portfolio_expected_impairment_loss"]
+    )
 
 
 def test_same_seed_bit_identical_artifacts(macro_snapshot, snapshot_store, artifact_store):
@@ -258,9 +295,7 @@ def test_regime_probabilities_form_distribution(seed):
     seed=st.integers(min_value=0, max_value=1_000),
 )
 @settings(max_examples=20, deadline=None)
-def test_p_impairment_always_in_unit_interval(
-    tmp_path_factory, ebitda, multiple, carrying, seed
-):
+def test_p_impairment_always_in_unit_interval(tmp_path_factory, ebitda, multiple, carrying, seed):
     from atlas.platform.audit.artifacts import ArtifactStore
     from atlas.platform.audit.snapshots import SnapshotStore
 
@@ -286,8 +321,6 @@ def test_p_impairment_always_in_unit_interval(
             "seed": seed,
         },
     )
-    result = ImpairmentEngine().run(
-        request, RunContext(f"run_{seed}_{id(request)}", snaps, arts)
-    )
+    result = ImpairmentEngine().run(request, RunContext(f"run_{seed}_{id(request)}", snaps, arts))
     p = result.metrics["portfolio_mean_p_impairment"]
     assert 0.0 <= p <= 1.0

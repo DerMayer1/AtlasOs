@@ -76,6 +76,75 @@ def test_full_flow_portfolio_to_result(client_and_keys):
         assert len(resp.content) == artifact["size_bytes"]
 
 
+def test_organization_keys_isolate_portfolios_analyses_and_artifacts(client_and_keys):
+    client, default_token, _, _ = client_and_keys
+    with client.app.state.container.session_factory() as session:
+        _, second_token = create_api_key(
+            session,
+            "second-tenant",
+            ["read", "run"],
+            org_id="org_second",
+        )
+    default_headers = {"X-API-Key": default_token}
+    second_headers = {"X-API-Key": second_token}
+
+    first = client.post("/portfolios", json=PORTFOLIO, headers=default_headers).json()
+    second_body = {**PORTFOLIO, "name": "Second tenant PF"}
+    second = client.post("/portfolios", json=second_body, headers=second_headers).json()
+
+    assert [
+        row["portfolio_id"]
+        for row in client.get("/portfolios", headers=default_headers).json()["portfolios"]
+    ] == [first["portfolio_id"]]
+    assert [
+        row["portfolio_id"]
+        for row in client.get("/portfolios", headers=second_headers).json()["portfolios"]
+    ] == [second["portfolio_id"]]
+    assert (
+        client.get(f"/portfolios/{first['portfolio_id']}", headers=second_headers).status_code
+        == 404
+    )
+
+    job = client.post(
+        "/analyses",
+        json={"engine": "impairment", "portfolio_id": first["portfolio_id"]},
+        headers=default_headers,
+    ).json()["job_id"]
+    result = client.get(f"/analyses/{job}", headers=default_headers).json()["result"]
+    artifact_name = result["artifacts"][0]["name"]
+    assert client.get(f"/analyses/{job}", headers=second_headers).status_code == 404
+    assert (
+        client.get(f"/artifacts/{job}/{artifact_name}", headers=second_headers).status_code == 404
+    )
+
+
+def test_company_history_is_versioned_with_the_portfolio(client_and_keys):
+    client, run_token, _, _ = client_and_keys
+    body = {
+        "name": "Calibrated PF",
+        "companies": [
+            {
+                "name": "History Co",
+                "ebitda": 120.0,
+                "multiple": 8.0,
+                "carrying_value": 800.0,
+                "ebitda_history": [
+                    {"year": 2021, "value": 85.0},
+                    {"year": 2022, "value": 93.0},
+                    {"year": 2023, "value": 104.0},
+                    {"year": 2024, "value": 120.0},
+                ],
+            }
+        ],
+    }
+    response = client.post("/portfolios", json=body, headers={"X-API-Key": run_token})
+
+    assert response.status_code == 201
+    assert (
+        response.json()["companies"][0]["ebitda_history"] == body["companies"][0]["ebitda_history"]
+    )
+
+
 def test_portfolio_version_is_inserted_before_company_inputs(client_and_keys):
     client, run_token, _, _ = client_and_keys
     statements: list[str] = []
@@ -264,9 +333,7 @@ def test_unknown_snapshot_rejected(client_and_keys):
 def test_failed_analysis_persists_error(client_and_keys):
     client, run_token, _, _ = client_and_keys
     # params without companies and no portfolio -> engine validation fails
-    job = client.post(
-        "/analyses", json={"engine": "impairment"}, headers={"X-API-Key": run_token}
-    )
+    job = client.post("/analyses", json={"engine": "impairment"}, headers={"X-API-Key": run_token})
     assert job.status_code == 202
     status = client.get(f"/analyses/{job.json()['job_id']}", headers={"X-API-Key": run_token})
     body = status.json()
@@ -391,7 +458,7 @@ def test_react_frontend_is_the_official_root(tmp_path, monkeypatch):
     assets_dir = spa_dir / "assets"
     assets_dir.mkdir(parents=True)
     (spa_dir / "index.html").write_text(
-        '<!doctype html><title>Atlas React</title>'
+        "<!doctype html><title>Atlas React</title>"
         '<script type="module" src="/assets/app.js"></script>',
         encoding="utf-8",
     )

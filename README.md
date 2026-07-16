@@ -182,6 +182,13 @@ management, a Redis worker mode, and a local SQLite mode for lightweight
 evaluation. Detailed operational commands live in the source tree and project
 documentation instead of this public overview.
 
+Organization provisioning is explicit and keeps keys server-side:
+
+```bash
+python -m atlas.interfaces.cli create-org --name "Investment Team" --slug investment-team
+python -m atlas.interfaces.cli create-key --org-id org_... --name production --scopes read,run
+```
+
 ## API Surface
 
 | Area | Endpoints |
@@ -214,7 +221,7 @@ scripts/         Validation reports and full-stack Compose smoke test
 | --- | --- |
 | Deterministic engine foundation | Complete |
 | FastAPI, persistence, auth, queue | Complete |
-| FRED ingestion and model validation | Complete |
+| ALFRED point-in-time ingestion and hybrid model validation | Implemented; keyed rerun pending |
 | Governed agent with cited narratives | Complete |
 | Macro monitor | Complete |
 | Public proof and hosted user experience | In progress |
@@ -222,10 +229,10 @@ scripts/         Validation reports and full-stack Compose smoke test
 ## Limitations
 
 AtlasOS is intentionally transparent about what it does not yet claim. Current
-limitations include revised FRED history rather than vintage ALFRED data,
-monthly crisis-detection granularity, on-demand alerts rather than automatic
-delivery, market-multiple valuation rather than a full DCF stack, and single
-tenant operation. See [`docs/limitations.md`](docs/limitations.md) for the full
+limitations include monthly crisis-detection granularity, on-demand alerts
+rather than automatic delivery, market-multiple valuation rather than a full
+DCF stack, aggregate fallbacks when company histories are unavailable and no
+billing layer. See [`docs/limitations.md`](docs/limitations.md) for the full
 record.
 
 ## License

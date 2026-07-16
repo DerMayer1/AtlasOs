@@ -17,13 +17,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
 
 from atlas.domain.engines.impairment.models import CompanyFinancialProfile
 from atlas.domain.reports.builder import build_report
 from atlas.interfaces.api.auth import (
     API_KEY_COOKIE,
+    DEFAULT_ORG_ID,
     SCOPE_READ,
     SCOPE_RUN,
     create_api_key,
@@ -93,6 +94,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 def _container(request: Request) -> Container:
     return request.app.state.container
+
+
+def _org_id(request: Request) -> str:
+    api_key = getattr(request.state, "api_key", None)
+    if api_key is None:
+        raise RuntimeError("authenticated organization is unavailable")
+    return api_key.org_id
+
+
+def _org_scope(column, org_id: str):
+    # NULL is accepted only for legacy rows in the default organization. The
+    # migration backfills these values; this branch makes rolling upgrades safe.
+    if org_id == DEFAULT_ORG_ID:
+        return or_(column == org_id, column.is_(None))
+    return column == org_id
+
+
+def _scoped_row(session: Session, model, row_id: str, org_id: str):
+    return session.execute(
+        select(model).where(model.id == row_id, _org_scope(model.org_id, org_id))
+    ).scalar_one_or_none()
 
 
 # --- request/response models -------------------------------------------------
@@ -214,6 +236,7 @@ def _previous_succeeded_analysis(
             AnalysisRow.status == "succeeded",
             AnalysisRow.id != row.id,
             AnalysisRow.created_at < row.created_at,
+            _org_scope(AnalysisRow.org_id, row.org_id),
         )
         .order_by(AnalysisRow.created_at.desc())
         .limit(1)
@@ -387,8 +410,10 @@ def _router():
     @router.post("/portfolios", status_code=201, dependencies=[require_scope(SCOPE_RUN)])
     def create_portfolio(body: PortfolioIn, request: Request):
         c = _container(request)
+        org_id = _org_id(request)
         row = PortfolioRow(
             id=f"pf_{uuid.uuid4().hex[:12]}",
+            org_id=org_id,
             name=body.name,
             companies=[co.model_dump() for co in body.companies],
         )
@@ -406,12 +431,12 @@ def _router():
         limit: int = Query(default=50, ge=1, le=200),
     ):
         c = _container(request)
+        org_id = _org_id(request)
         with c.session_factory() as session:
             rows = session.execute(
                 select(PortfolioRow)
-                .order_by(
-                    func.coalesce(PortfolioRow.updated_at, PortfolioRow.created_at).desc()
-                )
+                .where(_org_scope(PortfolioRow.org_id, org_id))
+                .order_by(func.coalesce(PortfolioRow.updated_at, PortfolioRow.created_at).desc())
                 .limit(limit)
             ).scalars()
             portfolios = [_portfolio_response(session, row) for row in rows]
@@ -423,8 +448,9 @@ def _router():
     )
     def list_portfolio_versions(portfolio_id: str, request: Request):
         c = _container(request)
+        org_id = _org_id(request)
         with c.session_factory() as session:
-            portfolio = session.get(PortfolioRow, portfolio_id)
+            portfolio = _scoped_row(session, PortfolioRow, portfolio_id, org_id)
             if portfolio is None:
                 raise HTTPException(404, "portfolio not found")
             rows = session.execute(
@@ -449,8 +475,9 @@ def _router():
     @router.get("/portfolios/{portfolio_id}", dependencies=[require_scope(SCOPE_READ)])
     def get_portfolio(portfolio_id: str, request: Request):
         c = _container(request)
+        org_id = _org_id(request)
         with c.session_factory() as session:
-            row = session.get(PortfolioRow, portfolio_id)
+            row = _scoped_row(session, PortfolioRow, portfolio_id, org_id)
             if row is None:
                 raise HTTPException(404, "portfolio not found")
             return _portfolio_response(session, row)
@@ -458,8 +485,13 @@ def _router():
     @router.put("/portfolios/{portfolio_id}", dependencies=[require_scope(SCOPE_RUN)])
     def update_portfolio(portfolio_id: str, body: PortfolioIn, request: Request):
         c = _container(request)
+        org_id = _org_id(request)
         with c.session_factory() as session:
-            row = session.get(PortfolioRow, portfolio_id, with_for_update=True)
+            row = session.execute(
+                select(PortfolioRow)
+                .where(PortfolioRow.id == portfolio_id, _org_scope(PortfolioRow.org_id, org_id))
+                .with_for_update()
+            ).scalar_one_or_none()
             if row is None:
                 raise HTTPException(404, "portfolio not found")
             _, changed = _append_portfolio_version(session, row, body)
@@ -470,6 +502,7 @@ def _router():
     @router.post("/analyses", status_code=202, dependencies=[require_scope(SCOPE_RUN)])
     async def create_analysis(body: AnalysisIn, request: Request):
         c = _container(request)
+        org_id = _org_id(request)
         with c.session_factory() as session:
             if body.engine not in c.registry.capabilities():
                 raise HTTPException(
@@ -481,7 +514,7 @@ def _router():
             params = dict(body.params)
             portfolio_version_id = None
             if body.portfolio_id:
-                portfolio = session.get(PortfolioRow, body.portfolio_id)
+                portfolio = _scoped_row(session, PortfolioRow, body.portfolio_id, org_id)
                 if portfolio is None:
                     raise HTTPException(404, "portfolio not found")
                 companies = _portfolio_companies(session, portfolio)
@@ -521,6 +554,7 @@ def _router():
                     .where(
                         AnalysisRow.idempotency_key == idempotency_key,
                         AnalysisRow.status.in_(_ACTIVE_STATUSES),
+                        _org_scope(AnalysisRow.org_id, org_id),
                     )
                     .order_by(AnalysisRow.created_at.desc())
                     .limit(1)
@@ -534,6 +568,7 @@ def _router():
 
             row = AnalysisRow(
                 id=f"run_{uuid.uuid4().hex[:12]}",
+                org_id=org_id,
                 portfolio_id=body.portfolio_id,
                 portfolio_version_id=portfolio_version_id,
                 engine=body.engine,
@@ -555,17 +590,28 @@ def _router():
         limit: int = Query(default=12, ge=1, le=100),
     ):
         c = _container(request)
+        org_id = _org_id(request)
         with c.session_factory() as session:
-            rows = session.execute(
-                select(AnalysisRow)
-                .order_by(AnalysisRow.created_at.desc())
-                .limit(limit)
-            ).scalars().all()
+            rows = (
+                session.execute(
+                    select(AnalysisRow)
+                    .where(_org_scope(AnalysisRow.org_id, org_id))
+                    .order_by(AnalysisRow.created_at.desc())
+                    .limit(limit)
+                )
+                .scalars()
+                .all()
+            )
             portfolio_ids = {row.portfolio_id for row in rows if row.portfolio_id}
             portfolios = (
                 session.execute(
-                    select(PortfolioRow).where(PortfolioRow.id.in_(portfolio_ids))
-                ).scalars().all()
+                    select(PortfolioRow).where(
+                        PortfolioRow.id.in_(portfolio_ids),
+                        _org_scope(PortfolioRow.org_id, org_id),
+                    )
+                )
+                .scalars()
+                .all()
                 if portfolio_ids
                 else []
             )
@@ -591,9 +637,7 @@ def _router():
                     "engine": row.engine,
                     "snapshot_id": row.snapshot_id,
                     "status": row.status,
-                    "portfolio_mean_p_impairment": metrics.get(
-                        "portfolio_mean_p_impairment"
-                    ),
+                    "portfolio_mean_p_impairment": metrics.get("portfolio_mean_p_impairment"),
                     "macro_regime": regime,
                     "stress_index": metrics.get("stress_index"),
                     "created_at": row.created_at,
@@ -605,8 +649,9 @@ def _router():
     @router.get("/analyses/{analysis_id}", dependencies=[require_scope(SCOPE_READ)])
     def get_analysis(analysis_id: str, request: Request):
         c = _container(request)
+        org_id = _org_id(request)
         with c.session_factory() as session:
-            row = session.get(AnalysisRow, analysis_id)
+            row = _scoped_row(session, AnalysisRow, analysis_id, org_id)
         if row is None:
             raise HTTPException(404, "analysis not found")
         return {
@@ -631,8 +676,9 @@ def _router():
     )
     def create_report(analysis_id: str, request: Request):
         c = _container(request)
+        org_id = _org_id(request)
         with c.session_factory() as session:
-            row = session.get(AnalysisRow, analysis_id)
+            row = _scoped_row(session, AnalysisRow, analysis_id, org_id)
             if row is None:
                 raise HTTPException(404, "analysis not found")
             if row.status != "succeeded" or not row.result:
@@ -643,7 +689,10 @@ def _router():
 
             existing = session.execute(
                 select(ReportRow)
-                .where(ReportRow.analysis_id == analysis_id)
+                .where(
+                    ReportRow.analysis_id == analysis_id,
+                    _org_scope(ReportRow.org_id, org_id),
+                )
                 .order_by(ReportRow.created_at.desc())
                 .limit(1)
             ).scalar_one_or_none()
@@ -653,9 +702,7 @@ def _router():
             metrics = dict(row.result.get("metrics", {}))
             previous = _previous_succeeded_analysis(session, row)
             previous_metrics = (
-                dict(previous.result.get("metrics", {}))
-                if previous and previous.result
-                else None
+                dict(previous.result.get("metrics", {})) if previous and previous.result else None
             )
 
             report = build_report(
@@ -697,10 +744,14 @@ def _router():
     )
     def get_report(analysis_id: str, request: Request):
         c = _container(request)
+        org_id = _org_id(request)
         with c.session_factory() as session:
             report = session.execute(
                 select(ReportRow)
-                .where(ReportRow.analysis_id == analysis_id)
+                .where(
+                    ReportRow.analysis_id == analysis_id,
+                    _org_scope(ReportRow.org_id, org_id),
+                )
                 .order_by(ReportRow.created_at.desc())
                 .limit(1)
             ).scalar_one_or_none()
@@ -714,24 +765,26 @@ def _router():
     )
     def narrate_report(analysis_id: str, request: Request):
         c = _container(request)
+        org_id = _org_id(request)
         with c.session_factory() as session:
             report = session.execute(
                 select(ReportRow)
-                .where(ReportRow.analysis_id == analysis_id)
+                .where(
+                    ReportRow.analysis_id == analysis_id,
+                    _org_scope(ReportRow.org_id, org_id),
+                )
                 .order_by(ReportRow.created_at.desc())
                 .limit(1)
             ).scalar_one_or_none()
             if report is None:
                 raise HTTPException(404, "build a report before narrating it")
-            analysis = session.get(AnalysisRow, analysis_id)
+            analysis = _scoped_row(session, AnalysisRow, analysis_id, org_id)
             if analysis is None or not analysis.result:
                 raise HTTPException(409, "analysis result is unavailable")
 
             result = AnalysisResult.model_validate(analysis.result)
             question = _report_narration_question(report)
-            narrative, _citations, degraded, reason, _usage = c.agent.narrate(
-                question, [result]
-            )
+            narrative, _citations, degraded, reason, _usage = c.agent.narrate(question, [result])
 
             report.narrative = narrative
             report.narrative_degraded = degraded
@@ -747,15 +800,28 @@ def _router():
         limit: int = Query(default=10, ge=1, le=100),
     ):
         c = _container(request)
+        org_id = _org_id(request)
         with c.session_factory() as session:
-            rows = session.execute(
-                select(ReportRow).order_by(ReportRow.created_at.desc()).limit(limit)
-            ).scalars().all()
+            rows = (
+                session.execute(
+                    select(ReportRow)
+                    .where(_org_scope(ReportRow.org_id, org_id))
+                    .order_by(ReportRow.created_at.desc())
+                    .limit(limit)
+                )
+                .scalars()
+                .all()
+            )
             analysis_ids = {row.analysis_id for row in rows}
             analyses = (
                 session.execute(
-                    select(AnalysisRow).where(AnalysisRow.id.in_(analysis_ids))
-                ).scalars().all()
+                    select(AnalysisRow).where(
+                        AnalysisRow.id.in_(analysis_ids),
+                        _org_scope(AnalysisRow.org_id, org_id),
+                    )
+                )
+                .scalars()
+                .all()
                 if analysis_ids
                 else []
             )
@@ -763,8 +829,13 @@ def _router():
             portfolio_ids = {pid for pid in portfolio_by_analysis.values() if pid}
             portfolios = (
                 session.execute(
-                    select(PortfolioRow).where(PortfolioRow.id.in_(portfolio_ids))
-                ).scalars().all()
+                    select(PortfolioRow).where(
+                        PortfolioRow.id.in_(portfolio_ids),
+                        _org_scope(PortfolioRow.org_id, org_id),
+                    )
+                )
+                .scalars()
+                .all()
                 if portfolio_ids
                 else []
             )
@@ -791,12 +862,13 @@ def _router():
     @router.post("/agent/ask", dependencies=[require_scope(SCOPE_RUN)])
     def agent_ask(body: AgentAskIn, request: Request):
         c = _container(request)
+        org_id = _org_id(request)
         params = dict(body.params)
         portfolio_context = ""
 
         with c.session_factory() as session:
             if body.portfolio_id:
-                portfolio = session.get(PortfolioRow, body.portfolio_id)
+                portfolio = _scoped_row(session, PortfolioRow, body.portfolio_id, org_id)
                 if portfolio is None:
                     raise HTTPException(404, "portfolio not found")
                 companies = _portfolio_companies(session, portfolio)
@@ -826,13 +898,15 @@ def _router():
             params=params,
             portfolio_id=body.portfolio_id,
             portfolio_context=portfolio_context,
+            org_id=org_id,
         )
         return answer.model_dump(mode="json")
 
     @router.get("/agent/traces/{trace_id}", dependencies=[require_scope(SCOPE_READ)])
     def get_trace(trace_id: str, request: Request):
         c = _container(request)
-        row = c.agent.trace_store.get(trace_id)
+        org_id = _org_id(request)
+        row = c.agent.trace_store.get(trace_id, org_id)
         if row is None:
             raise HTTPException(404, "trace not found")
         return {
@@ -861,6 +935,10 @@ def _router():
     )
     def get_artifact(run_id: str, name: str, request: Request):
         c = _container(request)
+        org_id = _org_id(request)
+        with c.session_factory() as session:
+            if _scoped_row(session, AnalysisRow, run_id, org_id) is None:
+                raise HTTPException(404, "artifact not found")
         try:
             path = c.artifacts.open_path(f"{run_id}/{name}")
         except FileNotFoundError:

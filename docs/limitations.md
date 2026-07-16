@@ -12,26 +12,29 @@ Honesty is a feature. What this system does **not** yet do:
    narration, citation validation and prompt wiring — but not changes in the
    real model's behaviour. A live eval run needs a key and is manual.
 
-1. **The supervised crisis classifier is still a validation candidate.** The
-   primary report now uses expanding walk-forward tests and compares a
-   regularized logistic model against HMM, VIX and spread rules. HMM remains a
-   feature and benchmark because its unsupervised states over-call the rare
-   crisis class. The classifier must improve precision, recall, PR-AUC,
-   calibration and false-alert burden before it can replace HMM probabilities
-   inside the impairment engine.
-1b. **Historical FRED values are revised, not vintage observations.** CPI and
-   unemployment receive a one-month publication lag and all transforms are
-   backward-looking, but the cache still contains today's revised history.
-   ALFRED/vintage ingestion is required to remove revision look-ahead fully.
+1. **The hybrid crisis classifier remains a validation candidate.** A fixed VIX
+   stress override raises provisional walk-forward recall from 0.355 to 0.645,
+   PR-AUC from 0.515 to 0.686 and improves Brier from 0.115 to 0.095. It also
+   raises false alerts from 0.18 to 0.94 per year. These are materially better
+   operating characteristics, but promotion into the impairment engine remains
+   gated on the point-in-time rerun below.
+1b. **ALFRED ingestion is implemented; release evidence needs a FRED API key.**
+   Validation defaults to initial releases (`output_type=4`) and stores them in
+   a separate immutable cache. The checked-in report is explicitly marked as a
+   provisional revised-FRED run because no API key is committed. Regenerate it
+   with `ATLAS_FRED_API_KEY` before treating the metrics as release evidence.
 2. **Detection lag resolves only to the month.** Macro data is monthly, so a
    "1-month lag" could be anywhere from 1 to ~30 days. Daily-frequency detection
    is parking-lot work.
-3. **Stress shocks are calibrated, but the std is an aggregate lower bound.**
+3. **Stress-shock std falls back to an aggregate lower bound when a company has
+   no history.**
    The per-regime shocks are now fit by regime-dummy regression of corporate
    profits over NBER+ windows (PRD Q2 closed; ADR-016). But `CP` is aggregate,
    so its volatility understates single-company EBITDA dispersion — the
    regime-conditional *mean* is well identified, the *std* is a floor.
-   Cross-sectional dispersion calibration is future work.
+   When at least four annual company EBITDA observations are supplied, the
+   engine estimates that company's log-growth volatility and records the source
+   in `risk_calibration.json`.
 4. **Alerts are on demand, not delivered automatically.** The Macro Monitor
    identifies level and momentum alerts inside each run, but there is no
    scheduler, notification channel or recurring execution.
@@ -42,14 +45,16 @@ Honesty is a feature. What this system does **not** yet do:
    EBITDA and multiple distributions, macro/sector/company factors, explicit
    cross-company dependence and 1/3-year scenarios. It still does not implement
    a DCF, WACC term structure, tax effects or cash-flow conversion.
-5b. **Correlation inputs are structural assumptions, not estimated matrices.**
-   Shared market and sector variance shares create non-perfect dependence
-   between companies, but the defaults are not yet calibrated from
-   company-level histories. Users should override volatility and sensitivities
-   when defensible company data exists.
+5b. **Correlation has a transparent fallback hierarchy.** A user-supplied PSD
+   matrix wins; otherwise five aligned annual EBITDA observations per company
+   produce a shrunk empirical matrix. Shared market/sector assumptions remain
+   only when histories are insufficient. The selected source and matrix are
+   published in `risk_calibration.json`.
 5c. **Debt diagnostics are deliberately separate from accounting impairment.**
    Net leverage, interest coverage and near-term liquidity are reported as
    financial resilience indicators. They do not mechanically alter recoverable
    amount, which remains EBITDA x stochastic multiple versus carrying value.
-6. **Single tenant.** API keys with read/run scopes exist; organizations and
-   billing are out of scope for v1 (PRD NG4).
+6. **Organization isolation is implemented; billing is not.** Every API key is
+   bound to an organization and portfolio, analysis, report, trace and artifact
+   access is organization-scoped. Subscription plans, metering and invoicing
+   remain outside the product.

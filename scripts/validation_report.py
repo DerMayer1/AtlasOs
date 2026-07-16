@@ -23,7 +23,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from atlas.domain.data.fred import FredClient, build_macro_frame  # noqa: E402
+from atlas.domain.data.fred import AlfredClient, FredClient, build_macro_frame  # noqa: E402
 from atlas.domain.engines.impairment.engine import _SHOCKS  # noqa: E402
 from atlas.domain.validation.labels import (  # noqa: E402
     STRICT_CRISIS_WINDOWS,
@@ -58,7 +58,7 @@ def _event_lags(predictions: pd.DataFrame) -> dict[str, int | None]:
             continue
         start_ts = pd.Period(start, freq="M").to_timestamp(how="end").normalize()
         window = predictions.loc[predictions.index >= start_ts].iloc[:12]
-        hits = window[window["logistic_prediction"] == 1]
+        hits = window[window["hybrid_prediction"] == 1]
         if hits.empty:
             lags[start] = None
         else:
@@ -75,12 +75,8 @@ def _sensitivity_table() -> pd.DataFrame:
         for std in (0.10, 0.20, 0.30):
             rng = np.random.default_rng(0)
             draws = rng.choice(3, size=50_000, p=regime_mix)
-            means = np.array(
-                [_SHOCKS["expansion"][0], _SHOCKS["tightening"][0], mean]
-            )[draws]
-            stds = np.array(
-                [_SHOCKS["expansion"][1], _SHOCKS["tightening"][1], std]
-            )[draws]
+            means = np.array([_SHOCKS["expansion"][0], _SHOCKS["tightening"][0], mean])[draws]
+            stds = np.array([_SHOCKS["expansion"][1], _SHOCKS["tightening"][1], std])[draws]
             growth = rng.standard_normal(50_000) * stds + means
             enterprise_value = 100.0 * (1.0 + growth) * 8.0
             row[f"sigma={std}"] = float((enterprise_value < 780.0).mean())
@@ -92,12 +88,35 @@ def main() -> None:
     FIGS.mkdir(parents=True, exist_ok=True)
 
     offline = os.getenv("ATLAS_VALIDATION_OFFLINE", "").lower() in {"1", "true", "yes"}
-    client = FredClient(ROOT / "var" / "data" / "cache" / "fred", offline=offline)
+    data_source = os.getenv("ATLAS_VALIDATION_DATA_SOURCE", "alfred").lower()
+    if data_source == "alfred":
+        client = AlfredClient(
+            ROOT / "var" / "data" / "cache" / "alfred",
+            api_key=os.getenv("ATLAS_FRED_API_KEY", ""),
+            offline=offline,
+        )
+        source_label = "ALFRED initial releases (point-in-time)"
+        source_id = "alfred:initial-release:macro+vix"
+        temporal_note = (
+            "Every macro observation is its ALFRED initial release (`output_type=4`), "
+            "so later revisions cannot leak into historical folds."
+        )
+    elif data_source == "fred":
+        client = FredClient(ROOT / "var" / "data" / "cache" / "fred", offline=offline)
+        source_label = "Revised FRED history (provisional development run)"
+        source_id = "fredgraph:revised:macro+vix"
+        temporal_note = (
+            "This provisional run uses revised FRED history. Set "
+            "`ATLAS_VALIDATION_DATA_SOURCE=alfred` with `ATLAS_FRED_API_KEY` before "
+            "treating the metrics as release evidence."
+        )
+    else:
+        raise ValueError("ATLAS_VALIDATION_DATA_SOURCE must be 'alfred' or 'fred'")
     macro = build_macro_frame(client, start="1990-01-01")
     snapshots = SnapshotStore(ROOT / "var" / "data" / "snapshots")
     manifest = snapshots.create(
         {"macro": macro},
-        sources=["fredgraph:macro+vix"],
+        sources=[source_id],
         period_start=str(macro.index.min().date()),
         period_end=str(macro.index.max().date()),
     )
@@ -127,13 +146,13 @@ def main() -> None:
 
     target_sensitivity = pd.DataFrame(
         {
-            "strict_nber": strict.aggregate_metrics.loc["logistic", comparison_columns],
-            "broader_stress": stress.aggregate_metrics.loc["logistic", comparison_columns],
+            "strict_nber": strict.aggregate_metrics.loc["hybrid", comparison_columns],
+            "broader_stress": stress.aggregate_metrics.loc["hybrid", comparison_columns],
         }
     ).T.round(3)
 
     calibration = calibration_table(
-        strict.predictions["target"], strict.predictions["logistic_probability"]
+        strict.predictions["target"], strict.predictions["hybrid_probability"]
     ).round(3)
     top_features = (
         strict.coefficients.abs()
@@ -146,7 +165,7 @@ def main() -> None:
     sensitivity = _sensitivity_table().round(3)
 
     fig, ax = plt.subplots(figsize=(11, 4))
-    probability_series = strict.predictions["logistic_probability"].reindex(
+    probability_series = strict.predictions["hybrid_probability"].reindex(
         pd.date_range(
             strict.predictions.index.min(),
             strict.predictions.index.max(),
@@ -156,7 +175,7 @@ def main() -> None:
     ax.plot(
         probability_series.index,
         probability_series,
-        label="walk-forward logistic P(crisis)",
+        label="walk-forward hybrid P(crisis)",
         color="darkred",
         linewidth=1.2,
     )
@@ -226,8 +245,9 @@ walk-forward tests; no model parameter or threshold is fitted on a test period.*
 |---|---|
 | Snapshot | `{manifest.snapshot_id}` |
 | Data period | {macro.index.min().date()} to {macro.index.max().date()} (monthly) |
+| Data source | {source_label} |
 | Primary target | Strict NBER recession months, contemporaneous detection |
-| Primary model | L2 logistic regression over causal macro, VIX and HMM features |
+| Primary model | Causal logistic score with fixed VIX stress override |
 | Operating rule | Maximize training precision subject to at least 60% training recall |
 
 ## 1. Primary out-of-sample comparison
@@ -284,8 +304,7 @@ causal economic importance.
 - Standardization, HMM fitting, logistic fitting and threshold selection happen
   inside each training fold.
 - Test periods are never used to select model parameters or thresholds.
-- The data are current revised FRED series, not vintage ALFRED releases. This
-  remains a source of revision look-ahead and is the next data-quality upgrade.
+- {temporal_note}
 
 ## 8. Crisis probabilities
 
@@ -304,10 +323,8 @@ is separate from crisis-classifier validation.
 
 ## 10. Interpretation
 
-- The logistic model is the candidate classifier; HMM remains a feature and
-  benchmark rather than the final crisis decision.
-- Precision, recall, PR-AUC, calibration and false-alert burden must all improve
-  before the classifier is promoted into the impairment engine.
+- The hybrid classifier combines the calibrated logistic score with a fixed,
+  causal VIX stress override. HMM remains a feature and benchmark.
 - This report does not claim deployable forecasting skill. It establishes a
   leakage-controlled baseline that future feature and model changes must beat.
 """

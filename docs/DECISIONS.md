@@ -218,13 +218,43 @@ Alerts are calculated only when a run is explicitly requested; scheduling and
 notification delivery remain separate concerns. This keeps the engine
 deterministic, snapshot-bound and honest about what the model can infer.
 
+## ADR-020 — Validation uses ALFRED initial releases by default
+
+`scripts/validation_report.py` now defaults to the official FRED API with
+`output_type=4`, which returns each observation's initial release. ALFRED data
+has its own cache and requires `ATLAS_FRED_API_KEY`. Revised FRED history remains
+available only through the explicit `ATLAS_VALIDATION_DATA_SOURCE=fred`
+development mode, and reports generated that way label themselves provisional.
+
+## ADR-021 — Crisis operation is a causal hybrid, not a threshold-only logistic
+
+The primary candidate keeps the fold-trained logistic probability but takes the
+maximum with a fixed VIX stress score and flags VIX above 30 as an override. The
+rule is fixed before every fold and uses contemporaneously observable market
+data. On the provisional revised-FRED run it raises recall from 0.355 to 0.645,
+PR-AUC from 0.515 to 0.686 and reduces Brier from 0.115 to 0.095, at the cost of
+0.94 false alerts per year versus 0.18.
+
+## ADR-022 — Company histories calibrate risk; organizations are the data boundary
+
+Company inputs may carry annual EBITDA histories. Four observations calibrate
+single-name volatility; five aligned observations per company calibrate a
+shrunk PSD correlation matrix. Explicit user assumptions still take priority,
+and aggregate/structural values remain a named fallback. Every run publishes
+`risk_calibration.json` with the selected sources.
+
+API keys now belong to organizations. All portfolio, analysis, report, trace and
+artifact reads and writes are scoped to the authenticated organization. The
+default organization exists only for backward-compatible local/demo operation;
+billing is a separate concern.
+
 ## Parking lot
 
 - Citation locator granularity (PRD Q1) — decide in Phase 3.
 - LLM model choice for prod vs evals (PRD Q3) — decide in Phase 3.
 - Demo data for public deploy (PRD Q4) — decide in Phase 4.
 - Snapshot retention policy (PRD Q5) — post-v1.
-- Crisis classification: beat the walk-forward logistic baseline, add ALFRED
-  vintages, and evaluate daily-frequency market features for sub-month lag.
-- Shock std: single-company cross-sectional dispersion (the calibrated `CP` std
-  is an aggregate lower bound; ADR-016).
+- Regenerate and publish the validation report from ALFRED after configuring the
+  server-side FRED API key.
+- Evaluate daily-frequency market features for sub-month detection lag.
+- Add billing and metering only after organization-level usage contracts exist.

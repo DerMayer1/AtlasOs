@@ -1,7 +1,7 @@
 """Operational CLI.
 
-  python -m atlas.interfaces.cli init-db   # create schema (Alembic upgrade head)
-  python -m atlas.interfaces.cli seed      # demo snapshot + portfolio + API key
+python -m atlas.interfaces.cli init-db   # create schema (Alembic upgrade head)
+python -m atlas.interfaces.cli seed      # demo snapshot + portfolio + API key
 """
 
 from __future__ import annotations
@@ -145,6 +145,41 @@ def cmd_demo(port: int) -> None:
     uvicorn.run(create_app(settings), host="127.0.0.1", port=port)
 
 
+def _session_factory():
+    from atlas.platform.db.models import Base
+    from atlas.platform.db.session import make_engine, make_session_factory
+
+    settings = get_settings()
+    engine = make_engine(settings.database_url)
+    if settings.auto_create_schema and settings.database_url.startswith("sqlite"):
+        Base.metadata.create_all(engine)
+    return make_session_factory(engine)
+
+
+def cmd_create_org(name: str, slug: str) -> None:
+    from atlas.interfaces.api.auth import ensure_organization
+
+    org_id = f"org_{uuid.uuid4().hex[:12]}"
+    with _session_factory()() as session:
+        ensure_organization(session, org_id, name=name, slug=slug)
+        session.commit()
+    print(f"org_id: {org_id}")
+
+
+def cmd_create_key(org_id: str, name: str, scopes: str) -> None:
+    from atlas.interfaces.api.auth import create_api_key
+    from atlas.platform.db.models import OrganizationRow
+
+    parsed = [scope.strip() for scope in scopes.split(",") if scope.strip()]
+    if not parsed or not set(parsed) <= {"read", "run"}:
+        raise SystemExit("scopes must be a comma-separated subset of read,run")
+    with _session_factory()() as session:
+        if session.get(OrganizationRow, org_id) is None:
+            raise SystemExit(f"organization {org_id!r} does not exist")
+        _, token = create_api_key(session, name=name, scopes=parsed, org_id=org_id)
+    print(f"api_key: {token}   (shown once - store it now)")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="atlas")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -153,6 +188,13 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("ingest")
     demo = sub.add_parser("demo")
     demo.add_argument("--port", type=int, default=8000)
+    create_org = sub.add_parser("create-org")
+    create_org.add_argument("--name", required=True)
+    create_org.add_argument("--slug", required=True)
+    create_key = sub.add_parser("create-key")
+    create_key.add_argument("--org-id", required=True)
+    create_key.add_argument("--name", required=True)
+    create_key.add_argument("--scopes", default="read,run")
     args = parser.parse_args(argv)
 
     if args.command == "init-db":
@@ -163,6 +205,10 @@ def main(argv: list[str] | None = None) -> int:
         cmd_ingest()
     elif args.command == "demo":
         cmd_demo(args.port)
+    elif args.command == "create-org":
+        cmd_create_org(args.name, args.slug)
+    elif args.command == "create-key":
+        cmd_create_key(args.org_id, args.name, args.scopes)
     return 0
 
 
