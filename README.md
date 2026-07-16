@@ -148,6 +148,13 @@ AtlasOS can run as a local evaluation instance, a containerized backend with
 Postgres and Redis, or a split deployment where the frontend is served separately
 and calls the Atlas API through a server-side proxy.
 
+Python dependencies are resolved in the committed `uv.lock`. CI and production
+images use `uv sync --locked`, so a dependency release cannot silently change a
+previously validated build. `scripts/compose_e2e.py` exercises the running
+Postgres, Redis, API and worker stack. It requires an isolated
+`COMPOSE_PROJECT_NAME`; CI uses `atlas-ci` so validation data and volumes never
+overlap with a developer stack.
+
 React is the canonical browser interface. The Docker image builds it in a Node
 stage, packages it with the Python application, and serves it at `/`. The former
 vanilla interface remains available at `/legacy` only as a rollback surface.
@@ -193,6 +200,7 @@ frontend/        React/Vite interface and deployment proxy
 migrations/      Alembic database migrations
 docs/            Decisions, validation, limitations, figures
 tests/           Contracts, API, engines, reports, agent, citations
+scripts/         Validation reports and full-stack Compose smoke test
 ```
 
 ## Roadmap

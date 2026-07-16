@@ -289,6 +289,11 @@ def _append_portfolio_version(
         input_hash=input_hash,
     )
     session.add(version)
+    # The models intentionally avoid ORM relationships. Flush the version header
+    # before its company rows so databases that enforce foreign keys (Postgres)
+    # never see a child before its parent. SQLite tests do not enforce this by
+    # default, which previously hid the ordering defect.
+    session.flush()
     for position, company in enumerate(companies):
         session.add(
             PortfolioCompanyInputRow(

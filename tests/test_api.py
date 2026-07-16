@@ -6,6 +6,7 @@ job_id, GET /analyses/{id} is polled for the outcome.
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import event
 
 from atlas.domain.data.synthetic import make_macro_frame
 from atlas.interfaces.api import app as app_module
@@ -73,6 +74,38 @@ def test_full_flow_portfolio_to_result(client_and_keys):
         resp = client.get(f"/artifacts/{job_id}/{artifact['name']}", headers=headers)
         assert resp.status_code == 200
         assert len(resp.content) == artifact["size_bytes"]
+
+
+def test_portfolio_version_is_inserted_before_company_inputs(client_and_keys):
+    client, run_token, _, _ = client_and_keys
+    statements: list[str] = []
+    engine = client.app.state.container.engine
+
+    def record_statement(_conn, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", record_statement)
+    try:
+        response = client.post(
+            "/portfolios",
+            json=PORTFOLIO,
+            headers={"X-API-Key": run_token},
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", record_statement)
+
+    assert response.status_code == 201
+    version_insert = next(
+        index
+        for index, statement in enumerate(statements)
+        if "INSERT INTO portfolio_versions" in statement
+    )
+    company_insert = next(
+        index
+        for index, statement in enumerate(statements)
+        if "INSERT INTO portfolio_company_inputs" in statement
+    )
+    assert version_insert < company_insert
 
 
 def test_portfolio_versions_are_immutable_and_deduplicated(client_and_keys):
