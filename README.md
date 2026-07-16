@@ -148,6 +148,10 @@ AtlasOS can run as a local evaluation instance, a containerized backend with
 Postgres and Redis, or a split deployment where the frontend is served separately
 and calls the Atlas API through a server-side proxy.
 
+React is the canonical browser interface. The Docker image builds it in a Node
+stage, packages it with the Python application, and serves it at `/`. The former
+vanilla interface remains available at `/legacy` only as a rollback surface.
+
 ```mermaid
 flowchart TB
     U["User browser"] --> V["React frontend"]
@@ -184,7 +188,7 @@ src/atlas/
   platform/      Contracts, snapshots, database, queue, runtime
   domain/        Data ingestion, engines, validation, reports
   agent/         Planning, narration, citations, evals, traces
-  interfaces/    FastAPI app, worker, CLI, static UI hosting
+  interfaces/    FastAPI app, worker, CLI, React bundle hosting
 frontend/        React/Vite interface and deployment proxy
 migrations/      Alembic database migrations
 docs/            Decisions, validation, limitations, figures

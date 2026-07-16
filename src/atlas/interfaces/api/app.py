@@ -14,7 +14,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select, text
@@ -48,8 +48,9 @@ from atlas.platform.db.models import (
 from atlas.platform.runtime.settings import Settings, get_settings
 
 STATIC_DIR = Path(__file__).with_name("static")
-# Built React SPA (frontend/ -> `pnpm build`). Served at /app during the
-# migration off the legacy vanilla UI; absent on a fresh checkout until built.
+# Built React SPA (frontend/ -> `pnpm build`). It is the official browser UI
+# and is included in production packages/images. The vanilla UI remains at
+# /legacy as a source-checkout fallback and rollback surface.
 SPA_DIR = Path(__file__).with_name("spa")
 
 
@@ -66,7 +67,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             RateLimitMiddleware,
             requests_per_minute=resolved_settings.rate_limit_requests_per_minute,
             burst=resolved_settings.rate_limit_burst,
-            excluded_paths=("/static", "/app"),
+            excluded_paths=("/static", "/assets"),
         )
     allowed_origins = [
         origin.strip()
@@ -84,8 +85,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.container = build_container(resolved_settings)
     app.include_router(_router())
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-    if SPA_DIR.exists():
-        app.mount("/app", StaticFiles(directory=SPA_DIR, html=True), name="spa")
+    spa_assets = SPA_DIR / "assets"
+    if spa_assets.exists():
+        app.mount("/assets", StaticFiles(directory=spa_assets), name="spa-assets")
     return app
 
 
@@ -312,7 +314,22 @@ def _router():
 
     @router.get("/", include_in_schema=False)
     def frontend():
+        spa_index = SPA_DIR / "index.html"
+        if spa_index.exists():
+            return FileResponse(spa_index, headers={"X-Atlas-Frontend": "react"})
+        return FileResponse(
+            STATIC_DIR / "index.html",
+            headers={"X-Atlas-Frontend": "legacy-fallback"},
+        )
+
+    @router.get("/legacy", include_in_schema=False)
+    def legacy_frontend():
         return FileResponse(STATIC_DIR / "index.html")
+
+    @router.get("/app", include_in_schema=False)
+    @router.get("/app/{path:path}", include_in_schema=False)
+    def previous_react_path(path: str = ""):
+        return RedirectResponse(url="/", status_code=308)
 
     @router.post("/demo/bootstrap", include_in_schema=False)
     def demo_bootstrap(request: Request, response: Response):

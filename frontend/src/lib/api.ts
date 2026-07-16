@@ -12,7 +12,8 @@ import {
 import { demoAnalyses, demoPortfolios, demoReportDetails, demoReports } from "./demoData";
 
 const DEMO_MODE_STORAGE = "atlas_demo_mode";
-const DEFAULT_API_BASE_URL = import.meta.env.BASE_URL === "/" ? "/api/atlas" : "";
+const DEFAULT_API_BASE_URL =
+  import.meta.env.VITE_ATLAS_RUNTIME === "proxy" ? "/api/atlas" : "";
 const API_BASE_URL = import.meta.env.VITE_ATLAS_API_URL?.replace(/\/$/, "") ?? DEFAULT_API_BASE_URL;
 
 export function isDemoMode() {

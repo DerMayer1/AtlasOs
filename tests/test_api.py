@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from atlas.domain.data.synthetic import make_macro_frame
+from atlas.interfaces.api import app as app_module
 from atlas.interfaces.api.app import create_app
 from atlas.interfaces.api.auth import create_api_key
 from atlas.platform.db.models import SnapshotRow
@@ -330,9 +331,9 @@ def test_request_body_limit_returns_413(tmp_path):
     assert response.json()["detail"] == "request body too large"
 
 
-def test_frontend_and_static_assets_are_served(client_and_keys):
+def test_legacy_frontend_and_static_assets_are_served(client_and_keys):
     client, *_ = client_and_keys
-    page = client.get("/")
+    page = client.get("/legacy")
     assert page.status_code == 200
     assert "Impairment analysis" in page.text
     assert "Macro Monitor" in page.text
@@ -350,6 +351,48 @@ def test_frontend_and_static_assets_are_served(client_and_keys):
     assert 'sessionStorage.removeItem("atlas_api_key")' in script.text
     assert "bootstrap.api_key" not in script.text
     assert 'credentials: "same-origin"' in script.text
+
+
+def test_react_frontend_is_the_official_root(tmp_path, monkeypatch):
+    spa_dir = tmp_path / "spa"
+    assets_dir = spa_dir / "assets"
+    assets_dir.mkdir(parents=True)
+    (spa_dir / "index.html").write_text(
+        '<!doctype html><title>Atlas React</title>'
+        '<script type="module" src="/assets/app.js"></script>',
+        encoding="utf-8",
+    )
+    (assets_dir / "app.js").write_text(
+        "window.__atlasReact = true;",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(app_module, "SPA_DIR", spa_dir)
+
+    settings = Settings(
+        database_url=f"sqlite:///{tmp_path / 'react-ui.db'}",
+        redis_url="",
+        data_dir=tmp_path / "data",
+        auto_create_schema=True,
+        rate_limit_enabled=False,
+    )
+    client = TestClient(app_module.create_app(settings))
+
+    root = client.get("/")
+    assert root.status_code == 200
+    assert root.headers["x-atlas-frontend"] == "react"
+    assert "Atlas React" in root.text
+
+    asset = client.get("/assets/app.js")
+    assert asset.status_code == 200
+    assert "__atlasReact" in asset.text
+
+    legacy = client.get("/legacy")
+    assert legacy.status_code == 200
+    assert "Impairment analysis" in legacy.text
+
+    previous_path = client.get("/app/overview", follow_redirects=False)
+    assert previous_path.status_code == 308
+    assert previous_path.headers["location"] == "/"
 
 
 def test_demo_bootstrap_is_disabled_by_default(client_and_keys):
