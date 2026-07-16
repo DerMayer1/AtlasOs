@@ -159,6 +159,11 @@ React is the canonical browser interface. The Docker image builds it in a Node
 stage, packages it with the Python application, and serves it at `/`. The former
 vanilla interface remains available at `/legacy` only as a rollback surface.
 
+Version tags (`v*`) publish the validated production image to
+`ghcr.io/<owner>/<repository>` with semantic-version, commit SHA and `latest`
+tags. The same workflow can be run manually when an operator needs a SHA-tagged
+image without creating a release tag.
+
 ```mermaid
 flowchart TB
     U["User browser"] --> V["React frontend"]

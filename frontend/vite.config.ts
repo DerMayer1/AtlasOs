@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
 const apiTarget = process.env.VITE_ATLAS_API_TARGET ?? "http://127.0.0.1:8000";
@@ -18,7 +18,21 @@ export default defineConfig({
   },
   build: {
     outDir: forVercel ? "dist" : "../src/atlas/interfaces/api/spa",
-    emptyOutDir: true
+    emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          charts: ["recharts"],
+          tables: ["@tanstack/react-table"],
+          "react-vendor": ["react", "react-dom", "@tanstack/react-query"]
+        }
+      }
+    }
+  },
+  test: {
+    environment: "jsdom",
+    include: ["src/**/*.test.{ts,tsx}"],
+    setupFiles: "./src/test/setup.ts"
   },
   server: {
     port: 5173,

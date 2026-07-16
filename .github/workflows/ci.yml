@@ -51,6 +51,19 @@ jobs:
       - name: Frontend production build
         working-directory: frontend
         run: pnpm build
+      - name: Install Playwright Chromium
+        working-directory: frontend
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Browser E2E tests
+        working-directory: frontend
+        run: pnpm e2e
+      - name: Upload browser test artifacts
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: playwright-report
+          path: output/playwright/
+          retention-days: 14
 
   docker:
     runs-on: ubuntu-latest

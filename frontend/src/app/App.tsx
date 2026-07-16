@@ -1,12 +1,23 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
-import { AnalysesPage } from "../features/analyses/AnalysesPage";
-import { MacroPage } from "../features/macro/MacroPage";
-import { OverviewPage } from "../features/overview/OverviewPage";
-import { ReportsPage } from "../features/reports/ReportsPage";
-import { SystemPage } from "../features/system/SystemPage";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { AppShell, type RouteId } from "../components/layout/AppShell";
 import { ApiKeyProvider } from "./ApiKeyProvider";
+
+const AnalysesPage = lazy(() =>
+  import("../features/analyses/AnalysesPage").then((module) => ({ default: module.AnalysesPage }))
+);
+const MacroPage = lazy(() =>
+  import("../features/macro/MacroPage").then((module) => ({ default: module.MacroPage }))
+);
+const OverviewPage = lazy(() =>
+  import("../features/overview/OverviewPage").then((module) => ({ default: module.OverviewPage }))
+);
+const ReportsPage = lazy(() =>
+  import("../features/reports/ReportsPage").then((module) => ({ default: module.ReportsPage }))
+);
+const SystemPage = lazy(() =>
+  import("../features/system/SystemPage").then((module) => ({ default: module.SystemPage }))
+);
 
 export function App() {
   const [route, setRoute] = useState<RouteId>(() => {
@@ -36,13 +47,15 @@ export function App() {
     <QueryClientProvider client={queryClient}>
       <ApiKeyProvider>
         <AppShell route={route} onNavigate={navigate}>
-          {route === "overview" && <OverviewPage onNavigate={navigate} />}
-          {route === "analyses" && <AnalysesPage onNavigate={navigate} />}
-          {route === "reports" && <ReportsPage />}
-          {route === "macro-monitor" && <MacroPage />}
-          {route === "system" && <SystemPage />}
-          {route === "impairment" && <AnalysesPage onNavigate={navigate} engineFilter="impairment" />}
-          {route === "portfolios" && <OverviewPage onNavigate={navigate} focus="portfolios" />}
+          <Suspense fallback={<div className="list-skeleton" role="status" aria-label="Loading view" />}>
+            {route === "overview" && <OverviewPage onNavigate={navigate} />}
+            {route === "analyses" && <AnalysesPage onNavigate={navigate} />}
+            {route === "reports" && <ReportsPage />}
+            {route === "macro-monitor" && <MacroPage />}
+            {route === "system" && <SystemPage />}
+            {route === "impairment" && <AnalysesPage onNavigate={navigate} engineFilter="impairment" />}
+            {route === "portfolios" && <OverviewPage onNavigate={navigate} focus="portfolios" />}
+          </Suspense>
         </AppShell>
       </ApiKeyProvider>
     </QueryClientProvider>
