@@ -822,3 +822,142 @@ tbody tr:hover td {
     flex-direction: column;
   }
 }
+
+/* ============================================================================
+   Terminal composition (Overview) — dense, edge-to-edge, no hero numbers.
+   ========================================================================== */
+.term {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 1680px;
+  margin: 0 auto;
+}
+
+/* context strip: snapshot / as-of / regime / stress / counts / status */
+.term-context {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0;
+  height: 30px;
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.ctx-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0 12px;
+  height: 100%;
+  align-items: center;
+  border-right: 1px solid var(--line);
+}
+.ctx-item.ctx-right { margin-left: auto; border-right: 0; }
+.ctx-k { color: var(--muted); font-size: 10px; letter-spacing: 0.08em; }
+.ctx-v { color: var(--ink); font-size: 12px; }
+.ctx-v.is-pos, .tm-v.is-pos, .num.is-pos, .ctx-v.is-good { color: var(--green); }
+.ctx-v.is-warn, .tm-v.is-warn, .num.is-warn { color: var(--amber); }
+.ctx-v.is-neg, .tm-v.is-neg, .num.is-neg { color: var(--red); }
+.ctx-v.is-muted, .tm-v.is-muted { color: var(--ink-soft); }
+.status-dot.is-live { background: var(--green); }
+
+/* compact metric row — small uniform figures, hairline separators, NO hero */
+.term-metrics {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.term-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 13px;
+  border-right: 1px solid var(--line);
+}
+.term-metric:last-child { border-right: 0; }
+.tm-k { color: var(--muted); font-size: 10px; letter-spacing: 0.07em; }
+.tm-v { color: var(--ink); font-size: 17px; font-weight: 500; line-height: 1; }
+
+/* pane grid */
+.term-grid {
+  display: grid;
+  grid-template-columns: 1fr minmax(300px, 380px);
+  gap: 8px;
+}
+.term-grid-2 { grid-template-columns: 1fr minmax(340px, 440px); }
+
+.pane {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  min-width: 0;
+}
+.pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 28px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--line);
+}
+.pane-title { color: var(--ink); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.pane-meta { color: var(--muted); font-size: 10px; }
+.pane-link { border: 0; background: transparent; color: var(--ink-soft); font-size: 10px; letter-spacing: 0.06em; padding: 0; }
+.pane-link:hover { color: var(--accent); }
+.pane-chart { padding: 8px 8px 4px; }
+.pane-chart .pane-head { padding: 0 2px 0 2px; margin-bottom: 6px; border-bottom: 0; height: auto; }
+
+/* dense tables */
+.term-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.term-table td, .term-table th { padding: 5px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.term-table tr:last-child td { border-bottom: 0; }
+.term-table th { color: var(--muted); font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-align: left; background: var(--surface-strong); }
+.term-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.term-table .tt-id { color: var(--ink-soft); }
+.term-table .tt-time { color: var(--muted); }
+.term-table .tt-name { color: var(--ink); max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.term-table .tt-empty { color: var(--muted); text-align: center; padding: 18px; }
+.term-table tbody tr:hover { background: var(--surface-strong); }
+
+/* sparkbar in the exposure table */
+.tt-bar { width: 50%; }
+.sparkbar { display: block; height: 8px; background: var(--bg); border: 1px solid var(--line); }
+.sparkbar-fill { display: block; height: 100%; }
+.sparkbar-fill.is-pos { background: var(--green); }
+.sparkbar-fill.is-warn { background: var(--amber); }
+.sparkbar-fill.is-neg { background: var(--red); }
+
+/* status tag */
+.tag { font-size: 10px; letter-spacing: 0.05em; padding: 1px 6px; border: 1px solid var(--line-strong); color: var(--ink-soft); font-family: var(--mono); }
+.tag.is-succeeded { color: var(--green); border-color: rgba(31,199,125,0.4); }
+.tag.is-failed { color: var(--red); border-color: rgba(255,77,68,0.4); }
+.tag.is-running, .tag.is-queued { color: var(--amber); border-color: rgba(240,168,48,0.4); }
+
+/* reports list */
+.report-list { display: flex; flex-direction: column; }
+.report-row { display: flex; gap: 0; text-align: left; border: 0; border-bottom: 1px solid var(--line); background: transparent; padding: 0; }
+.report-row:hover { background: var(--surface-strong); }
+.sev-tick { width: 3px; flex: 0 0 3px; }
+.sev-tick.is-warn { background: var(--amber); }
+.sev-tick.is-neg { background: var(--red); }
+.sev-tick.is-muted { background: var(--line-strong); }
+.rr-body { display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; min-width: 0; }
+.rr-head { display: flex; gap: 8px; align-items: center; font-size: 10px; }
+.rr-sev.is-warn { color: var(--amber); }
+.rr-sev.is-neg { color: var(--red); }
+.rr-sev.is-muted { color: var(--ink-soft); }
+.rr-meta { color: var(--muted); }
+.rr-line { color: var(--ink-soft); font-size: 12px; line-height: 1.4; white-space: normal; }
+.report-foot { padding: 7px 10px; color: var(--muted); font-size: 10px; border-top: 1px solid var(--line); letter-spacing: 0.05em; }
+
+@media (max-width: 1080px) {
+  .term-grid, .term-grid-2 { grid-template-columns: 1fr; }
+}
+
+/* Terminal frame: tighten the page header — small title, no prose subtitle. */
+.main { padding-top: 12px; }
+.topbar { margin-bottom: 8px; align-items: center; }
+.topbar h1 { font-size: 14px; letter-spacing: 0.04em; text-transform: uppercase; }
+.topbar p { display: none; }

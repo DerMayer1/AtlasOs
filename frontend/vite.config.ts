@@ -21,10 +21,19 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       output: {
-        manualChunks: {
-          charts: ["recharts"],
-          tables: ["@tanstack/react-table"],
-          "react-vendor": ["react", "react-dom", "@tanstack/react-query"]
+        // Function form, not the object form: under Rollup 4 (vite 8) the
+        // object literal resolves against ManualChunksFunction and fails to
+        // typecheck. Same three chunks as before.
+        manualChunks(id: string) {
+          if (id.includes("/node_modules/recharts/")) return "charts";
+          if (id.includes("/node_modules/@tanstack/react-table/")) return "tables";
+          if (
+            id.includes("/node_modules/react/") ||
+            id.includes("/node_modules/react-dom/") ||
+            id.includes("/node_modules/@tanstack/react-query/")
+          ) {
+            return "react-vendor";
+          }
         }
       }
     }
