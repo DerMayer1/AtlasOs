@@ -27,5 +27,20 @@
       "n_quarters": 17,
       "source": "calibrated"
     }
+  },
+  "multiple_compression": {
+    "method": "Analyst assumption: regime-conditional EV/EBITDA multiple re-rating applied on top of the calibrated EBITDA shock. NOT calibrated from data — no point-in-time market-multiple series is ingested. This term is the dominant driver of modeled crisis severity (~95% of the mean crisis decline in recoverable value); see docs/limitations.md before treating crisis output as calibrated.",
+    "expansion": {
+      "value": 0.04,
+      "source": "assumption"
+    },
+    "tightening": {
+      "value": -0.12,
+      "source": "assumption"
+    },
+    "crisis": {
+      "value": -0.3,
+      "source": "assumption"
+    }
   }
 }

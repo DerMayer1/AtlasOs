@@ -52,6 +52,17 @@ _PRIOR = {
     "crisis": (-0.15, 0.20),
 }
 
+# Regime-conditional multiple re-rating. This is an explicit ASSUMPTION, not a
+# calibration — there is no point-in-time market-multiple series to fit against,
+# so this script cannot derive it. It is emitted here (rather than hardcoded in
+# the engine) so the whole regime-parameter set lives in one provenance file and
+# survives regeneration, with its non-calibrated status stated in the payload.
+_MULTIPLE_COMPRESSION_ASSUMPTION = {
+    "expansion": 0.04,
+    "tightening": -0.12,
+    "crisis": -0.30,
+}
+
 
 def main() -> None:
     cache = ROOT / "var" / "data" / "cache" / "fred"
@@ -99,6 +110,20 @@ def main() -> None:
             "The regime-conditional mean is well identified; std is a lower bound."
         ),
         "shocks": shocks,
+        "multiple_compression": {
+            "method": (
+                "Analyst assumption: regime-conditional EV/EBITDA multiple re-rating "
+                "applied on top of the calibrated EBITDA shock. NOT calibrated from "
+                "data — no point-in-time market-multiple series is ingested. This term "
+                "is the dominant driver of modeled crisis severity (~95% of the mean "
+                "crisis decline in recoverable value); see docs/limitations.md before "
+                "treating crisis output as calibrated."
+            ),
+            **{
+                regime: {"value": value, "source": "assumption"}
+                for regime, value in _MULTIPLE_COMPRESSION_ASSUMPTION.items()
+            },
+        },
     }
     OUT_FILE.write_text(json.dumps(payload, indent=2) + "\n")
 

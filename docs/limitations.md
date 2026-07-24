@@ -54,6 +54,19 @@ Honesty is a feature. What this system does **not** yet do:
    Net leverage, interest coverage and near-term liquidity are reported as
    financial resilience indicators. They do not mechanically alter recoverable
    amount, which remains EBITDA x stochastic multiple versus carrying value.
+5d. **Regime multiple compression is an assumption, and it dominates crisis
+   severity.** Recoverable amount is `EBITDA x multiple`. The per-regime EBITDA
+   shock is calibrated from corporate-profit history (item 3), but the
+   per-regime multiple re-rating (`expansion +4%`, `tightening -12%`,
+   `crisis -30%`) is a hand-set analyst assumption — no point-in-time
+   market-multiple series is ingested, so there is nothing to fit it against.
+   Because the calibrated crisis EBITDA shock is only about -2%, roughly **95%**
+   of the mean crisis decline in recoverable value comes from this uncalibrated
+   -30% term. The values and their `assumption` provenance are emitted in
+   `shock_calibration.json` and in every run's `risk_calibration.json`. Treat
+   the crisis scenario as a transparent stress assumption, not a calibrated
+   forecast; calibrating compression against a market-multiple series (e.g. a
+   sector EV/EBITDA history) is the natural next step.
 6. **Organization isolation is implemented; billing is not.** Every API key is
    bound to an organization and portfolio, analysis, report, trace and artifact
    access is organization-scoped. Subscription plans, metering and invoicing
