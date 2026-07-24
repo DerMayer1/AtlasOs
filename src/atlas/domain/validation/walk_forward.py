@@ -16,6 +16,17 @@ VIX_OVERRIDE_LEVEL = 30.0
 VIX_SCORE_FLOOR = 25.0
 VIX_SCORE_CEILING = 40.0
 
+# Prediction/probability column pairs scored per fold AND in aggregate. Both
+# tables read from this one mapping: a fold table can never silently report a
+# different model than the headline comparison.
+MODEL_COLUMNS = {
+    "hybrid": ("hybrid_prediction", "hybrid_probability"),
+    "logistic": ("logistic_prediction", "logistic_probability"),
+    "hmm": ("hmm_prediction", "hmm_probability"),
+    "vix_rule": ("vix_prediction", "vix_prediction"),
+    "spread_rule": ("spread_prediction", "spread_prediction"),
+}
+
 
 def _vix_stress_score(vix: pd.Series) -> pd.Series:
     """Fixed market-stress score; no fold or test-period fitting."""
@@ -130,10 +141,20 @@ def run_walk_forward(
         frame["spread_prediction"] = macro.loc[frame.index, "baa_aaa_spread"].gt(1.2).astype(int)
         prediction_frames.append(frame)
 
-        fold_result = binary_metrics(
-            frame["target"], frame["logistic_prediction"], frame["logistic_probability"]
-        )
-        metric_rows.append({"fold": fold.name, "model": "logistic", **fold_result})
+        for model_name, (prediction_column, probability_column) in MODEL_COLUMNS.items():
+            if prediction_column not in frame:
+                continue
+            metric_rows.append(
+                {
+                    "fold": fold.name,
+                    "model": model_name,
+                    **binary_metrics(
+                        frame["target"],
+                        frame[prediction_column],
+                        frame[probability_column],
+                    ),
+                }
+            )
         coefficients = model.coefficient_series()
         coefficients.name = fold.name
         coefficient_rows.append(coefficients)
@@ -142,15 +163,8 @@ def run_walk_forward(
         raise ValueError("walk-forward produced no evaluable folds")
 
     predictions = pd.concat(prediction_frames).sort_index()
-    comparisons = {
-        "hybrid": ("hybrid_prediction", "hybrid_probability"),
-        "logistic": ("logistic_prediction", "logistic_probability"),
-        "hmm": ("hmm_prediction", "hmm_probability"),
-        "vix_rule": ("vix_prediction", "vix_prediction"),
-        "spread_rule": ("spread_prediction", "spread_prediction"),
-    }
     aggregate_rows = []
-    for model_name, (prediction_column, probability_column) in comparisons.items():
+    for model_name, (prediction_column, probability_column) in MODEL_COLUMNS.items():
         if prediction_column not in predictions:
             continue
         aggregate_rows.append(

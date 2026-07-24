@@ -3,7 +3,11 @@ import pandas as pd
 
 from atlas.domain.validation.classifier import fit_logistic_crisis_model
 from atlas.domain.validation.features import apply_publication_lags, build_crisis_features
-from atlas.domain.validation.walk_forward import WalkForwardFold, run_walk_forward
+from atlas.domain.validation.walk_forward import (
+    MODEL_COLUMNS,
+    WalkForwardFold,
+    run_walk_forward,
+)
 
 
 def _validation_macro(periods: int = 300) -> tuple[pd.DataFrame, pd.Series]:
@@ -68,6 +72,31 @@ def test_walk_forward_does_not_use_data_after_fold():
         rerun.predictions["logistic_probability"],
     )
     assert original.aggregate_metrics.loc["logistic", "recall"] > 0.0
+
+
+def test_fold_metrics_cover_every_aggregated_model():
+    """Per-fold and aggregate tables must describe the same set of models.
+
+    Regression guard: fold metrics were previously emitted for the logistic
+    model only, so a report could publish logistic fold numbers underneath a
+    hybrid headline without either table saying so.
+    """
+    macro, labels = _validation_macro()
+    folds = (
+        WalkForwardFold("first", "1999-12", "2000-01", "2005-12"),
+        WalkForwardFold("second", "2007-12", "2008-01", "2014-12"),
+    )
+
+    result = run_walk_forward(macro, labels, folds=folds, include_hmm=False)
+
+    aggregated = set(result.aggregate_metrics.index)
+    assert aggregated == {
+        name
+        for name, (prediction_column, _) in MODEL_COLUMNS.items()
+        if prediction_column in result.predictions
+    }
+    for fold in folds:
+        assert set(result.fold_metrics.xs(fold.name, level="fold").index) == aggregated
 
 
 def test_hybrid_classifier_adds_fixed_vix_recall_without_future_fitting():
