@@ -111,6 +111,25 @@ export async function probeAuthenticatedConnection() {
   }
 }
 
+// Exchange an API key for an HttpOnly session cookie. The key is sent once, in
+// a header; the backend sets the cookie and every later request rides it, so
+// the key itself never lives in JS-readable storage.
+export async function login(apiKey: string) {
+  await atlasFetch("/auth/session", {
+    method: "POST",
+    headers: { "X-API-Key": apiKey }
+  });
+  setDemoMode(false);
+}
+
+export async function logout() {
+  try {
+    await atlasFetch("/auth/session", { method: "DELETE" });
+  } catch {
+    // best-effort: clearing the cookie server-side may already have happened
+  }
+}
+
 export async function fetchAnalyses(limit = 100): Promise<Analysis[]> {
   if (isDemoMode()) {
     return demoAnalyses.slice(0, limit);

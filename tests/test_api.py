@@ -378,6 +378,56 @@ def test_agent_ask_runs_engine_and_persists_trace(client_and_keys):
     assert trace.json()["citations_valid"] is True
 
 
+def test_session_login_rejects_missing_and_invalid_keys(client_and_keys):
+    client, *_ = client_and_keys
+    assert client.post("/auth/session").status_code == 401
+    assert client.post("/auth/session", headers={"X-API-Key": "atlas_nope"}).status_code == 401
+
+
+def test_session_login_sets_httponly_secure_cookie(client_and_keys):
+    client, run_token, _, _ = client_and_keys
+    response = client.post("/auth/session", headers={"X-API-Key": run_token})
+
+    assert response.status_code == 200
+    assert response.json()["authenticated"] is True
+    assert "run" in response.json()["scopes"]
+    set_cookie = response.headers["set-cookie"].lower()
+    assert "atlas_api_key=" in set_cookie
+    assert "httponly" in set_cookie
+    assert "secure" in set_cookie  # session_cookie_secure defaults to True
+    assert "samesite=strict" in set_cookie
+
+
+def _secure_disabled_client(tmp_path):
+    settings = Settings(
+        database_url=f"sqlite:///{tmp_path / 'session.db'}",
+        redis_url="",
+        data_dir=tmp_path / "data",
+        auto_create_schema=True,
+        session_cookie_secure=False,  # so the TestClient replays the cookie over http
+    )
+    app = create_app(settings)
+    with app.state.container.session_factory() as session:
+        _, token = create_api_key(session, "browser", ["read", "run"])
+    return TestClient(app), token
+
+
+def test_session_cookie_authenticates_then_logout_revokes(tmp_path):
+    client, token = _secure_disabled_client(tmp_path)
+
+    # No credentials at all -> rejected.
+    assert client.get("/portfolios").status_code == 401
+
+    # Log in; the cookie is now stored by the client.
+    assert client.post("/auth/session", json={"api_key": token}).status_code == 200
+    # Subsequent request carries only the cookie, no X-API-Key header.
+    assert client.get("/portfolios").status_code == 200
+
+    # Logout clears the cookie; the client is unauthenticated again.
+    assert client.delete("/auth/session").status_code == 200
+    assert client.get("/portfolios").status_code == 401
+
+
 def test_health_unauthenticated(client_and_keys):
     client, *_ = client_and_keys
     resp = client.get("/health")
@@ -386,6 +436,20 @@ def test_health_unauthenticated(client_and_keys):
     assert body["status"] == "ok"
     assert body["checks"]["database"] == "ok"
     assert body["checks"]["queue"] == "in-process"
+
+
+def test_default_health_probe_does_not_make_outbound_fred_call(client_and_keys):
+    # The probe platform load balancers hit constantly must stay local: no
+    # outbound FRED call, so no traffic amplification and no FRED-latency drag.
+    client, *_ = client_and_keys
+    body = client.get("/health").json()
+    assert "fred" not in body["checks"]  # only checked on ?deep=true
+
+
+def test_deep_health_probe_includes_fred(client_and_keys):
+    client, *_ = client_and_keys
+    body = client.get("/health", params={"deep": "true"}).json()
+    assert "fred" in body["checks"]  # opt-in dependency probe
 
 
 def test_rate_limit_returns_429(tmp_path):

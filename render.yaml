@@ -1,0 +1,71 @@
+# Render Blueprint for AtlasOS — one web service (API + baked-in SPA + Arq
+# worker) plus managed Postgres and Key Value (Redis). See docs/DEPLOY.md.
+#
+# Topology note: a Render disk attaches to exactly one service, and both the API
+# and the worker need the same /data volume (the worker writes snapshots and
+# artifacts; the API reads them for downloads, reports and citation checks). So
+# they run as two processes inside this single web service — scripts/render_start.py
+# supervises them. Independent worker scaling would require object storage for
+# artifacts (the S3 path documented in docs/DEPLOY.md).
+#
+# Plan slugs (starter / basic-256mb / …) must match what your Render account and
+# region offer; adjust if the blueprint is rejected. Disk-backed web services run
+# a single instance without zero-downtime deploys — expected here.
+
+databases:
+  - name: atlas-postgres
+    databaseName: atlas
+    user: atlas
+    plan: basic-256mb
+
+services:
+  - type: keyvalue
+    name: atlas-redis
+    plan: starter
+    ipAllowList: []            # internal only; no public access
+    # The queue must not silently drop jobs under memory pressure.
+    maxmemoryPolicy: noeviction
+
+  - type: web
+    name: atlas
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    dockerCommand: python scripts/render_start.py
+    healthCheckPath: /health   # cheap by default (DB + queue only; no outbound FRED)
+    autoDeploy: true
+    disk:
+      name: atlas-data
+      mountPath: /data
+      sizeGB: 10
+    envVars:
+      - key: ATLAS_DATABASE_URL
+        fromDatabase:
+          name: atlas-postgres
+          property: connectionString
+      - key: ATLAS_REDIS_URL
+        fromService:
+          type: keyvalue
+          name: atlas-redis
+          property: connectionString
+      - key: ATLAS_DATA_DIR
+        value: /data
+      - key: ATLAS_AUTO_CREATE_SCHEMA
+        value: "false"          # schema is applied by alembic in render_start.py
+      # Render terminates TLS at one proxy in front of the service, so the real
+      # client IP is the rightmost X-Forwarded-For entry (see PR #13).
+      - key: ATLAS_TRUSTED_PROXY_COUNT
+        value: "1"
+      # Single service serves the SPA same-origin, so no cross-origin browser
+      # calls to allow. Set this only if you split the frontend onto another host.
+      - key: ATLAS_CORS_ALLOWED_ORIGINS
+        value: ""
+      - key: ATLAS_LLM_MODEL
+        value: gpt-4.1-mini
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      # Secrets — set these in the Render dashboard, never commit them.
+      - key: ATLAS_FRED_API_KEY
+        sync: false
+      - key: ATLAS_OPENAI_API_KEY
+        sync: false

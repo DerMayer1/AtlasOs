@@ -20,6 +20,7 @@ COPY pyproject.toml uv.lock README.md alembic.ini ./
 COPY src ./src
 COPY --from=frontend-build /src/atlas/interfaces/api/spa ./src/atlas/interfaces/api/spa
 COPY migrations ./migrations
+COPY scripts ./scripts
 RUN uv sync --locked --no-editable --no-dev --no-cache
 
 EXPOSE 8000

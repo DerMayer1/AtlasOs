@@ -2,12 +2,15 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from atlas.platform.db.models import Base
+from atlas.platform.db.session import normalize_database_url
 from atlas.platform.runtime.settings import get_settings
 
 config = context.config
 target_metadata = Base.metadata
 
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+# Same driver normalization the app uses, so `alembic upgrade head` connects
+# with psycopg3 against managed-host DSNs instead of failing on psycopg2.
+config.set_main_option("sqlalchemy.url", normalize_database_url(get_settings().database_url))
 
 
 def run_migrations_offline() -> None:
