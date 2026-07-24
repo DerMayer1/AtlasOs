@@ -28,6 +28,7 @@ from atlas.interfaces.api.auth import (
     SCOPE_READ,
     SCOPE_RUN,
     create_api_key,
+    hash_token,
     require_scope,
 )
 from atlas.interfaces.api.container import Container, build_container
@@ -40,6 +41,7 @@ from atlas.platform.audit.snapshots import SnapshotNotFoundError
 from atlas.platform.contracts.schemas import AnalysisResult, utcnow
 from atlas.platform.db.models import (
     AnalysisRow,
+    ApiKeyRow,
     PortfolioCompanyInputRow,
     PortfolioRow,
     PortfolioVersionRow,
@@ -148,6 +150,13 @@ class AgentAskIn(BaseModel):
     portfolio_id: str | None = None
     snapshot_id: str | None = None
     params: dict[str, Any] = Field(default_factory=dict)
+
+
+class SessionLoginIn(BaseModel):
+    # The key may arrive in the X-API-Key header (preferred) or this body field,
+    # so the browser can post it from a login form without exposing it to JS on
+    # subsequent requests (the response sets an HttpOnly cookie).
+    api_key: str | None = None
 
 
 COMPANY_FIELDS = tuple(CompanyFinancialProfile.model_fields)
@@ -360,6 +369,46 @@ def _router():
     @router.get("/app/{path:path}", include_in_schema=False)
     def previous_react_path(path: str = ""):
         return RedirectResponse(url="/", status_code=308)
+
+    @router.post("/auth/session")
+    def create_session(request: Request, response: Response, body: SessionLoginIn | None = None):
+        """Exchange a valid API key for an HttpOnly session cookie.
+
+        This is the production browser login: the SPA posts a key once, the key
+        is verified against the stored hash, and the response sets the same
+        cookie the auth dependency already reads. The plaintext key never
+        returns to JavaScript, and the cookie is Secure + SameSite=Strict.
+        """
+        token = request.headers.get("x-api-key") or (body.api_key if body else None)
+        if not token:
+            raise HTTPException(401, "missing API key")
+        c = _container(request)
+        with c.session_factory() as session:
+            row = session.execute(
+                select(ApiKeyRow).where(ApiKeyRow.key_hash == hash_token(token))
+            ).scalar_one_or_none()
+        if row is None:
+            raise HTTPException(401, "invalid API key")
+
+        response.set_cookie(
+            key=API_KEY_COOKIE,
+            value=token,
+            httponly=True,
+            secure=c.settings.session_cookie_secure,
+            samesite="strict",
+            path="/",
+        )
+        return {
+            "authenticated": True,
+            "org_id": row.org_id,
+            "scopes": row.scopes.split(","),
+        }
+
+    @router.delete("/auth/session")
+    def delete_session(response: Response):
+        """Log out: clear the session cookie."""
+        response.delete_cookie(API_KEY_COOKIE, path="/")
+        return {"authenticated": False}
 
     @router.post("/demo/bootstrap", include_in_schema=False)
     def demo_bootstrap(request: Request, response: Response):
@@ -948,7 +997,13 @@ def _router():
         return FileResponse(path, filename=name)
 
     @router.get("/health")
-    def health(request: Request):
+    def health(request: Request, deep: bool = Query(default=False)):
+        # The default probe checks only the core dependencies (database, queue)
+        # and must stay cheap: platform health checks hit it constantly. The
+        # live FRED check is an outbound call, so it runs only on ?deep=true —
+        # otherwise every probe would amplify traffic to FRED and inherit its
+        # latency. FRED is informational anyway: an outage degrades ingestion,
+        # not the API, which runs on the last frozen snapshot.
         c = _container(request)
         checks: dict[str, str] = {}
         try:
@@ -969,18 +1024,17 @@ def _router():
         else:
             checks["queue"] = "in-process"
 
-        try:
-            import httpx
+        if deep:
+            try:
+                import httpx
 
-            from atlas.domain.data.fred import FREDGRAPH_URL
+                from atlas.domain.data.fred import FREDGRAPH_URL
 
-            resp = httpx.head(FREDGRAPH_URL, params={"id": "FEDFUNDS"}, timeout=3.0)
-            checks["fred"] = "ok" if resp.status_code < 500 else f"error: {resp.status_code}"
-        except Exception as exc:
-            checks["fred"] = f"error: {type(exc).__name__}"
+                resp = httpx.head(FREDGRAPH_URL, params={"id": "FEDFUNDS"}, timeout=3.0)
+                checks["fred"] = "ok" if resp.status_code < 500 else f"error: {resp.status_code}"
+            except Exception as exc:
+                checks["fred"] = f"error: {type(exc).__name__}"
 
-        # fred is informational: an outage degrades ingestion, not the API
-        # (scheduled analyses fall back to the last valid snapshot, PRD §5).
         core = (checks["database"], checks["queue"])
         status = "ok" if all(not v.startswith("error") for v in core) else "degraded"
         return {"status": status, "checks": checks}

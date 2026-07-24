@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useApiKey } from "../../app/ApiKeyProvider";
-import { bootstrapLocalDemo, getApiBaseUrl } from "../../lib/api";
+import { bootstrapLocalDemo, getApiBaseUrl, login, logout } from "../../lib/api";
 
 export function ConnectionPanel() {
   const {
@@ -14,6 +14,8 @@ export function ConnectionPanel() {
   } = useApiKey();
   const [expanded, setExpanded] = useState(!configured);
   const [status, setStatus] = useState<string | null>(null);
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const [signingIn, setSigningIn] = useState(false);
   const queryClient = useQueryClient();
 
   async function handleBootstrap() {
@@ -30,6 +32,34 @@ export function ConnectionPanel() {
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Local bootstrap failed.");
     }
+  }
+
+  async function handleSignIn() {
+    const key = apiKeyInput.trim();
+    if (!key) {
+      setStatus("Enter an API key to sign in.");
+      return;
+    }
+    setSigningIn(true);
+    setStatus("Signing in...");
+    try {
+      await login(key);
+      setApiKeyInput("");
+      useBackendMode();
+      setStatus("Signed in. Backend connected.");
+      await queryClient.invalidateQueries();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Sign in failed.");
+    } finally {
+      setSigningIn(false);
+    }
+  }
+
+  async function handleSignOut() {
+    await logout();
+    setStatus("Signed out.");
+    await queryClient.invalidateQueries();
+    window.location.reload();
   }
 
   return (
@@ -53,8 +83,42 @@ export function ConnectionPanel() {
       {expanded && (
         <div className="connection-form">
           <p className="form-note">
-            Secrets are backend-managed. The browser never stores or sends Atlas API keys.
+            Sign in with an Atlas API key. It is exchanged once for an HttpOnly
+            session cookie and is never kept in browser storage.
           </p>
+          <div className="connection-signin">
+            <label className="form-note" htmlFor="atlas-api-key">
+              API key
+            </label>
+            <input
+              id="atlas-api-key"
+              type="password"
+              autoComplete="off"
+              placeholder="atlas_..."
+              value={apiKeyInput}
+              onChange={(event) => setApiKeyInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  void handleSignIn();
+                }
+              }}
+            />
+            <div className="connection-actions">
+              <button
+                className="primary-button"
+                type="button"
+                disabled={signingIn}
+                onClick={() => void handleSignIn()}
+              >
+                {signingIn ? "Signing in..." : "Sign in"}
+              </button>
+              {configured && !demoMode && (
+                <button className="secondary-button" type="button" onClick={handleSignOut}>
+                  Sign out
+                </button>
+              )}
+            </div>
+          </div>
           <div className="connection-actions">
             <button
               className="primary-button"

@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     # Explicit local-only mode. Enables the unauthenticated demo bootstrap
     # endpoint used by `python -m atlas.interfaces.cli demo`.
     demo_mode: bool = False
+    # Set the Secure flag on the browser session cookie. True in production
+    # (HTTPS); set false only to exercise the login flow over plain http locally.
+    session_cookie_secure: bool = True
     # Comma-separated browser origins allowed to call the API from a separately
     # deployed frontend, e.g. https://atlas-os.vercel.app.
     cors_allowed_origins: str = ""
