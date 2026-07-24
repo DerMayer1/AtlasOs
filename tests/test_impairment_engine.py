@@ -148,6 +148,23 @@ def test_engine_publishes_risk_calibration_provenance(
     assert payload["companies"][0]["ebitda_volatility_source"] == "aggregate-fallback"
     assert payload["companies"][1]["ebitda_volatility_source"] == "user"
 
+    # Crisis severity rests on the multiple re-rating, which is an assumption,
+    # not a calibration. The run artifact must say so, next to the compression
+    # values it actually used, so a report reader can see it.
+    assert payload["multiple_compression_source"] in {"assumption", "assumption-fallback"}
+    assert set(payload["multiple_compression"]) == set(REGIMES)
+    assert payload["multiple_compression"]["crisis"] < 0.0
+
+
+def test_multiple_compression_is_loaded_from_the_calibration_file():
+    from atlas.domain.engines.impairment import engine as engine_module
+
+    values, source = engine_module._load_multiple_compression()
+    assert source == "assumption"  # the committed file tags every regime this way
+    assert values == {regime: engine_module._MULTIPLE_COMPRESSION[regime] for regime in REGIMES}
+    # np array used by the simulation must follow REGIMES order exactly
+    assert list(engine_module._MULTIPLE_COMPRESSIONS) == [values[r] for r in REGIMES]
+
 
 def test_scenarios_publish_decision_relevant_loss_distribution(
     macro_snapshot, snapshot_store, artifact_store

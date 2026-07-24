@@ -45,7 +45,16 @@ _FALLBACK_SHOCKS = {
     "tightening": (-0.02, 0.12),
     "crisis": (-0.15, 0.20),
 }
-_MULTIPLE_COMPRESSION = {
+# Regime-conditional multiple re-rating. Unlike the EBITDA shocks above, these
+# are an explicit analyst ASSUMPTION, not a calibration: no point-in-time
+# market-multiple series is ingested, so there is nothing to fit them against.
+# They are nonetheless the dominant driver of modeled crisis severity (~95% of
+# the mean crisis decline in recoverable value, since recoverable = ebitda x
+# multiple and the calibrated crisis EBITDA shock is only ~-2%). Their source is
+# published per run in risk_calibration.json and documented in
+# docs/limitations.md. This dict is the fallback if the calibration file omits
+# the block; the file is the source of truth.
+_FALLBACK_MULTIPLE_COMPRESSION = {
     "expansion": 0.04,
     "tightening": -0.12,
     "crisis": -0.30,
@@ -59,9 +68,29 @@ def _load_shocks() -> dict[str, tuple[float, float]]:
     return dict(_FALLBACK_SHOCKS)
 
 
+def _load_multiple_compression() -> tuple[dict[str, float], str]:
+    """Return (per-regime compression, provenance label).
+
+    Reads the ``multiple_compression`` block from the calibration file when
+    present; otherwise falls back to the hardcoded assumption. The provenance
+    label makes it visible in every run whether crisis severity rests on a
+    calibrated figure or a hand-set one — today, always the latter.
+    """
+    if _CALIBRATION_FILE.exists():
+        data = json.loads(_CALIBRATION_FILE.read_text())
+        block = data.get("multiple_compression")
+        if block:
+            values = {regime: float(block[regime]["value"]) for regime in REGIMES}
+            sources = {block[regime].get("source", "assumption") for regime in REGIMES}
+            label = sources.pop() if len(sources) == 1 else "mixed"
+            return values, label
+    return dict(_FALLBACK_MULTIPLE_COMPRESSION), "assumption-fallback"
+
+
 _SHOCKS = _load_shocks()
 _SHOCK_MEANS = np.array([_SHOCKS[regime][0] for regime in REGIMES])
 _SHOCK_STDS = np.array([_SHOCKS[regime][1] for regime in REGIMES])
+_MULTIPLE_COMPRESSION, _MULTIPLE_COMPRESSION_SOURCE = _load_multiple_compression()
 _MULTIPLE_COMPRESSIONS = np.array([_MULTIPLE_COMPRESSION[regime] for regime in REGIMES])
 
 
@@ -395,6 +424,11 @@ class ImpairmentEngine:
             "ebitda_correlation_matrix": (
                 ebitda_correlation.tolist() if ebitda_correlation is not None else None
             ),
+            # Explicit so a report reader can see crisis severity rests on an
+            # assumption, not a calibration. The EBITDA shocks are calibrated;
+            # the multiple re-rating that dominates crisis output is not.
+            "multiple_compression": {r: _MULTIPLE_COMPRESSION[r] for r in REGIMES},
+            "multiple_compression_source": _MULTIPLE_COMPRESSION_SOURCE,
             "companies": [
                 {
                     "name": company.name,
