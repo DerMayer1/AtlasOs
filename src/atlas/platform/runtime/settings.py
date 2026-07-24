@@ -28,6 +28,16 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     rate_limit_requests_per_minute: int = 120
     rate_limit_burst: int = 30
+    # Number of trusted reverse proxies in front of the API. 0 (default) means
+    # the API is directly exposed: X-Forwarded-For is client-controlled and must
+    # be ignored, so the peer IP is used for rate limiting. Set to the real hop
+    # count (e.g. 1 behind a single proxy) so the client IP is read from the
+    # right of the X-Forwarded-For chain, where trusted proxies append it, and a
+    # spoofed left-hand entry cannot bypass the limiter.
+    trusted_proxy_count: int = 0
+    # Hard cap on distinct rate-limit identities held in memory, so a flood of
+    # unique identities cannot grow the bucket table without bound.
+    rate_limit_max_tracked_identities: int = 100_000
     max_request_body_bytes: int = 1_000_000
     # Agent LLM. Empty key -> NullLLMClient -> graceful degradation (deterministic
     # planning + numbers-only narration). Set ATLAS_OPENAI_API_KEY for full mode.

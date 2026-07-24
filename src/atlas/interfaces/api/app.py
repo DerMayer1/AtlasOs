@@ -69,6 +69,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             requests_per_minute=resolved_settings.rate_limit_requests_per_minute,
             burst=resolved_settings.rate_limit_burst,
             excluded_paths=("/static", "/assets"),
+            trusted_proxy_count=resolved_settings.trusted_proxy_count,
+            max_tracked_identities=resolved_settings.rate_limit_max_tracked_identities,
         )
     allowed_origins = [
         origin.strip()

@@ -431,6 +431,99 @@ def test_request_body_limit_returns_413(tmp_path):
     assert response.json()["detail"] == "request body too large"
 
 
+def test_spoofed_forwarded_for_cannot_bypass_rate_limit(tmp_path):
+    # Direct exposure (trusted_proxy_count=0): a client that rotates
+    # X-Forwarded-For must not mint a fresh bucket per request.
+    settings = Settings(
+        database_url=f"sqlite:///{tmp_path / 'xff.db'}",
+        redis_url="",
+        data_dir=tmp_path / "data",
+        auto_create_schema=True,
+        rate_limit_requests_per_minute=1,
+        rate_limit_burst=2,
+    )
+    client = TestClient(create_app(settings))
+
+    codes = [
+        client.get("/health", headers={"X-Forwarded-For": f"203.0.113.{i}"}).status_code
+        for i in range(4)
+    ]
+    assert 429 in codes  # the spoofed header did not grant unlimited identities
+
+
+def test_trusted_proxy_reads_client_ip_from_right_of_forwarded_for(tmp_path):
+    # Behind one trusted proxy, distinct real clients get distinct buckets, and
+    # a spoofed left-hand entry does not change the trusted right-hand IP.
+    settings = Settings(
+        database_url=f"sqlite:///{tmp_path / 'proxy.db'}",
+        redis_url="",
+        data_dir=tmp_path / "data",
+        auto_create_schema=True,
+        rate_limit_requests_per_minute=1,
+        rate_limit_burst=2,
+        trusted_proxy_count=1,
+    )
+    client = TestClient(create_app(settings))
+
+    # Two requests from real client A (rightmost entry), then a third: limited.
+    a = [
+        client.get("/health", headers={"X-Forwarded-For": f"{spoof}, 198.51.100.7"}).status_code
+        for spoof in ("evil-1", "evil-2", "evil-3")
+    ]
+    # A different real client B is unaffected by A's exhaustion.
+    b = client.get("/health", headers={"X-Forwarded-For": "198.51.100.8"}).status_code
+
+    assert a[0] == 200 and a[1] == 200 and a[2] == 429  # spoofed left entry ignored
+    assert b == 200
+
+
+def test_rate_limit_identity_table_is_bounded(tmp_path):
+    from atlas.interfaces.api.security import RateLimitMiddleware, _Bucket
+
+    middleware = RateLimitMiddleware(
+        app=lambda *args: None,
+        requests_per_minute=600,
+        burst=5,
+        trusted_proxy_count=1,
+        max_tracked_identities=50,
+    )
+    import time
+
+    now = time.monotonic()
+    with middleware._lock:
+        for i in range(500):
+            if len(middleware._buckets) >= middleware.max_tracked_identities:
+                middleware._evict_locked(now)
+            middleware._buckets[f"ip:10.0.{i}"] = _Bucket(tokens=5.0, updated_at=now)
+
+    assert len(middleware._buckets) <= 50  # a unique-identity flood cannot grow it without bound
+
+
+def test_chunked_body_over_limit_is_rejected(tmp_path):
+    # No Content-Length: httpx streams a generator as chunked transfer-encoding,
+    # which the old Content-Length-only guard let straight through.
+    settings = Settings(
+        database_url=f"sqlite:///{tmp_path / 'chunked.db'}",
+        redis_url="",
+        data_dir=tmp_path / "data",
+        auto_create_schema=True,
+        rate_limit_enabled=False,
+        max_request_body_bytes=32,
+    )
+    client = TestClient(create_app(settings))
+
+    def oversized_stream():
+        yield b'{"question":"' + b"x" * 200 + b'"}'
+
+    response = client.post(
+        "/agent/ask",
+        content=oversized_stream(),
+        headers={"Content-Type": "application/json", "X-API-Key": "atlas_test"},
+    )
+    assert response.status_code == 413
+    assert response.json()["detail"] == "request body too large"
+
+
 def test_legacy_frontend_and_static_assets_are_served(client_and_keys):
     client, *_ = client_and_keys
     page = client.get("/legacy")
