@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "atlas"
 version = "0.1.0"
 description = "Atlas - macro-financial monitoring platform: pluggable quantitative engines, immutable snapshots, auditable narratives."
+license = { text = "MIT" }
 requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.7",
